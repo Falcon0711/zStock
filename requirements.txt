@@ -1,0 +1,20 @@
+# 多市场智能交易分析系统 - 依赖包
+# Multi-Market Intelligent Trading Analysis System - Dependencies
+
+# Web框架
+fastapi>=0.104.0
+uvicorn>=0.24.0
+
+# 数据处理
+pandas>=2.0.0
+numpy>=1.24.0
+
+# 数据获取
+akshare
+
+# 其他工具库
+python-dateutil>=2.8.0
+alpha-vantage==3.0.0
+requests-cache==1.2.1
+yfinance
+tushare

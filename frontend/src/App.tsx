@@ -1,0 +1,308 @@
+import React, { useState, useRef } from 'react';
+import { ThemeProvider, useTheme } from './ThemeContext';
+import Dashboard from './components/Dashboard';
+import MarketTicker from './components/MarketTicker';
+import StockGroups from './components/StockGroups';
+import SearchSuggestions from './components/SearchSuggestions';
+import { analyzeStock, fetchHistory, searchStocks } from './services/api';
+import type { AnalysisResult, ChartData, StockSuggestion } from './services/api';
+
+console.log('✅ App component function called');
+
+const AppContent: React.FC = () => {
+  const { theme, toggleTheme } = useTheme();
+
+
+  const [searchInput, setSearchInput] = useState<string>('');
+  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+  const [history, setHistory] = useState<ChartData[]>([]);
+  const [loading, setLoading] = useState<boolean>(false);
+
+  // 搜索建议状态
+  const [suggestions, setSuggestions] = useState<StockSuggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
+  const searchTimeoutRef = useRef<number | null>(null);
+
+  console.log('✅ App component state initialized');
+
+
+
+  const handleAnalyze = async (code: string) => {
+    if (!code || code.length !== 6) {
+      alert('请输入正确的6位股票代码');
+      return;
+    }
+
+    setLoading(true);
+    setSearchInput(code);
+
+    try {
+      const [analysisData, historyData] = await Promise.all([
+        analyzeStock(code),
+        fetchHistory(code)
+      ]);
+
+      setAnalysis(analysisData);
+      setHistory(historyData);
+    } catch (error) {
+      console.error('Analysis failed', error);
+      alert('分析失败，请检查代码或网络');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBack = () => {
+    setAnalysis(null);
+    setHistory([]);
+    setSearchInput('');
+    setSuggestions([]);
+    setShowSuggestions(false);
+  };
+
+  // 处理搜索输入（带debounce）
+  const handleSearchInput = (value: string) => {
+    setSearchInput(value);
+
+    // 清除之前的定时器
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    // 如果输入小于2个字符，不显示建议
+    if (value.length < 2) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    // 300ms debounce
+    searchTimeoutRef.current = window.setTimeout(async () => {
+      try {
+        const results = await searchStocks(value, 10);
+        setSuggestions(results);
+        setShowSuggestions(results.length > 0);
+      } catch (error) {
+        console.error('搜索失败:', error);
+        setSuggestions([]);
+        setShowSuggestions(false);
+      }
+    }, 300);
+  };
+
+  // 处理选择建议
+  const handleSelectSuggestion = (code: string) => {
+    setSearchInput(code);
+    setShowSuggestions(false);
+    setSuggestions([]);
+    handleAnalyze(code);
+  };
+
+  console.log('✅ About to render App JSX');
+
+  return (
+    <div style={{
+      minHeight: '100vh',
+      background: theme.colors.bgPrimary,
+      color: theme.colors.textPrimary,
+      transition: 'background-color 0.3s ease, color 0.3s ease',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif'
+    }}>
+      <div>
+        {/* Market Ticker - 行情横条 */}
+        <MarketTicker />
+
+        {/* Header */}
+        <div style={{
+          padding: '1rem 2rem',
+          background: theme.mode === 'dark' ? 'rgba(28, 28, 30, 0.8)' : 'rgba(255, 255, 255, 0.8)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          borderBottom: `1px solid ${theme.colors.border} `,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          position: 'sticky',
+          top: 0,
+          zIndex: 100,
+          transition: 'all 0.3s ease'
+        }}>
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flex: 1 }}>
+            {/* 返回按钮 - 仅在有分析结果时显示 */}
+            {analysis && (
+              <button
+                onClick={handleBack}
+                style={{
+                  padding: '0.5rem 1rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: theme.colors.bgTertiary,
+                  color: theme.colors.textPrimary,
+                  fontSize: '0.9rem',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = theme.mode === 'dark' ? '#3A3A3C' : '#D1D1D6'}
+                onMouseLeave={(e) => e.currentTarget.style.background = theme.colors.bgTertiary}
+              >
+                <span>←</span>
+                <span>返回</span>
+              </button>
+            )}
+
+            <div style={{ position: 'relative', width: '280px', flexShrink: 0 }}>
+              <input
+                type="text"
+                placeholder="搜索股票 (如: 平安、000001)"
+                value={searchInput}
+                onChange={e => handleSearchInput(e.target.value)}
+                onKeyPress={e => e.key === 'Enter' && handleAnalyze(searchInput)}
+                onFocus={(e) => {
+                  e.target.style.background = theme.mode === 'dark' ? '#3A3A3C' : '#E5E5EA';
+                  // 如果有建议就显示
+                  if (suggestions.length > 0) {
+                    setShowSuggestions(true);
+                  }
+                }}
+                onBlur={(e) => {
+                  e.target.style.background = theme.colors.bgTertiary;
+                  // 延迟关闭，以便点击建议
+                  setTimeout(() => setShowSuggestions(false), 200);
+                }}
+                style={{
+                  padding: '0.6rem 1rem 0.6rem 2.2rem',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: theme.colors.bgTertiary,
+                  color: theme.colors.textPrimary,
+                  fontSize: '0.9rem',
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  outline: 'none',
+                  transition: 'all 0.2s ease',
+                }}
+              />
+              <span style={{
+                position: 'absolute',
+                left: '0.8rem',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                color: theme.colors.textTertiary,
+                fontSize: '0.9rem'
+              }}>🔍</span>
+
+              {/* 搜索建议组件 */}
+              <SearchSuggestions
+                suggestions={suggestions}
+                onSelect={handleSelectSuggestion}
+                visible={showSuggestions}
+                searchQuery={searchInput}
+              />
+            </div>
+
+            <button
+              onClick={() => handleAnalyze(searchInput)}
+              disabled={loading}
+              style={{
+                padding: '0.6rem 1.2rem',
+                borderRadius: '20px',
+                border: 'none',
+                background: loading ? theme.colors.bgTertiary : theme.colors.accent,
+                color: '#fff',
+                fontSize: '0.9rem',
+                fontWeight: 500,
+                cursor: loading ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s ease',
+                opacity: loading ? 0.7 : 1
+              }}
+              onMouseEnter={(e) => {
+                if (!loading) e.currentTarget.style.background = theme.colors.accentHover;
+              }}
+              onMouseLeave={(e) => {
+                if (!loading) e.currentTarget.style.background = theme.colors.accent;
+              }}
+            >
+              {loading ? '分析中...' : '分析'}
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+            <div style={{
+              color: theme.colors.textSecondary,
+              fontSize: '0.85rem',
+              fontWeight: 500,
+              letterSpacing: '-0.01em'
+            }}>
+              A股智能分析系统 v2.0
+            </div>
+
+            {/* Theme Toggle */}
+            <button
+              onClick={toggleTheme}
+              style={{
+                padding: '0.5rem',
+                borderRadius: '50%',
+                border: 'none',
+                background: theme.colors.bgTertiary,
+                color: theme.colors.textPrimary,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '32px',
+                height: '32px',
+                fontSize: '1rem',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = theme.mode === 'dark' ? '#3A3A3C' : '#D1D1D6'}
+              onMouseLeave={(e) => e.currentTarget.style.background = theme.colors.bgTertiary}
+              title={`切换到${theme.mode === 'dark' ? '亮色' : '暗色'} 模式`}
+            >
+              {theme.mode === 'dark' ? '☀️' : '🌙'}
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div style={{ overflow: 'initial' }}>
+          {analysis ? (
+            <Dashboard analysis={analysis} history={history} loading={loading} />
+          ) : (
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem',
+              paddingTop: '2rem'
+            }}>
+              <div style={{
+                textAlign: 'center',
+                color: theme.colors.textSecondary,
+                fontSize: '1.1rem',
+                fontWeight: 500,
+                marginBottom: '1rem'
+              }}>
+                请输入股票代码开始分析，或管理您的股票分组
+              </div>
+
+              <StockGroups onSelectStock={handleAnalyze} />
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const App: React.FC = () => {
+  return (
+    <ThemeProvider>
+      <AppContent />
+    </ThemeProvider>
+  );
+};
+
+export default App;

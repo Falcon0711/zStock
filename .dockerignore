@@ -1,0 +1,28 @@
+# 忽略版本控制
+.git
+.gitignore
+
+# 忽略环境文件
+.env
+.venv
+venv/
+ENV/
+
+# 忽略 Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 忽略前端依赖和构建产物 (会在构建阶段重新生成)
+frontend/node_modules/
+frontend/dist/
+
+# 忽略 IDE 配置
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 忽略日志和数据 (使用挂载卷)
+logs/
+data/

@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+
+# Environment variables & Secrets
+.env
+config.py
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.DS_Store
+
+# System
+.DS_Store
+.idea/
+.vscode/
+
+# Logs & Data
+logs/
+data/
