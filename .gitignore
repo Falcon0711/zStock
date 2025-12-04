@@ -5,6 +5,7 @@ __pycache__/
 .venv/
 venv/
 ENV/
+*.egg-info/
 
 # Environment variables & Secrets
 .env
@@ -19,7 +20,12 @@ frontend/.DS_Store
 .DS_Store
 .idea/
 .vscode/
+*.log
 
 # Logs & Data
 logs/
 data/
+
+# Test
+.pytest_cache/
+.coverage

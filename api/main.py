@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -8,18 +8,22 @@ import time
 
 # Add project root to path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(project_root)
+sys.path.insert(0, project_root)
 
 from analyzers.stock_analyzer import StockAnalyzer
 from services.market_data_service import MarketDataService
 from services.sector_data_service import SectorDataService
 from services.user_stock_service import UserStockService
 from services.stock_list_service import StockListService
+from api.validators import validate_stock_code
+from utils.logger import get_logger
 from fastapi.staticfiles import StaticFiles
 import json
 import pandas as pd
 import akshare as ak
 from datetime import datetime
+
+logger = get_logger(__name__)
 
 # Load API keys from config
 try:
@@ -27,16 +31,17 @@ try:
 except ImportError:
     ALPHA_VANTAGE_API_KEY = None
     TUSHARE_TOKEN = None
-    print("Warning: config.py not found or API keys not set.")
+    logger.warning("config.py not found or API keys not set.")
 
 app = FastAPI(title="Stock Analysis API")
 
-# Enable CORS
+# CORS 配置: 生产环境应限制域名
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -72,24 +77,17 @@ def read_root():
     return {"message": "Stock Analysis API is running"}
 
 @app.get("/api/stock/{code}")
-def analyze_stock(code: str):
+def analyze_stock(code: str = Depends(validate_stock_code)):
+    """分析单只股票"""
     try:
-        # 验证股票代码格式
-        if not code or len(code) != 6 or not code.isdigit():
-            raise HTTPException(
-                status_code=400, 
-                detail=f"股票代码格式错误: {code}。请输入6位数字代码（如：600328、000001）"
-            )
-        
         result = analyzer.analyze_stock(code)
         if not result:
             raise HTTPException(
                 status_code=404, 
-                detail=f"无法获取股票 {code} 的数据。请检查股票代码是否正确，或稍后重试。"
+                detail=f"无法获取股票 {code} 的数据"
             )
         
-        # Convert numpy types to native python types for JSON serialization
-        response = {
+        return {
             "latest_price": float(result['latest_price']),
             "score": int(result['score']),
             "signals": {k: bool(v) for k, v in result['signals'].items()},
@@ -99,24 +97,78 @@ def analyze_stock(code: str):
             "zhixing_trend_value": float(result['zhixing_trend_value']),
             "zhixing_multi_value": float(result['zhixing_multi_value'])
         }
-        return response
     except HTTPException:
         raise
     except Exception as e:
-        error_msg = str(e)
-        # 提供更友好的错误信息
-        if "无法获取股票" in error_msg or "获取股票数据失败" in error_msg:
+        logger.error(f"分析股票 {code} 失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"分析股票时发生错误: {e}")
+
+
+@app.get("/api/stock/{code}/full")
+def get_stock_full(code: str = Depends(validate_stock_code)):
+    """
+    🆕 合并端点：一次返回分析结果 + K线历史数据
+    减少前端两次请求的开销
+    """
+    try:
+        # 只调用一次 analyze_stock，结果会被缓存
+        result = analyzer.analyze_stock(code)
+        if not result or 'data' not in result:
             raise HTTPException(
-                status_code=404,
-                detail=f"无法获取股票 {code} 的真实数据。{error_msg}"
+                status_code=404, 
+                detail=f"无法获取股票 {code} 的数据"
             )
-        raise HTTPException(status_code=500, detail=f"分析股票时发生错误: {error_msg}")
+        
+        # 格式化分析数据
+        analysis = {
+            "latest_price": float(result['latest_price']),
+            "score": int(result['score']),
+            "signals": {k: bool(v) for k, v in result['signals'].items()},
+            "kdj_k": float(result['kdj_k']),
+            "kdj_d": float(result['kdj_d']),
+            "bbi_value": float(result['bbi_value']),
+            "zhixing_trend_value": float(result['zhixing_trend_value']),
+            "zhixing_multi_value": float(result['zhixing_multi_value'])
+        }
+        
+        # 格式化历史数据（直接从缓存的 result['data'] 中取）
+        df = result['data']
+        history = []
+        for _, row in df.iterrows():
+            history.append({
+                "time": row['date'].strftime('%Y-%m-%d'),
+                "open": float(row['open']),
+                "high": float(row['high']),
+                "low": float(row['low']),
+                "close": float(row['close']),
+                "volume": int(row['volume']) if 'volume' in row else 0,
+                "ma5": float(row['ma5']) if pd.notna(row.get('ma5')) else None,
+                "ma10": float(row['ma10']) if pd.notna(row.get('ma10')) else None,
+                "ma20": float(row['ma20']) if pd.notna(row.get('ma20')) else None,
+                "ma30": float(row['ma30']) if pd.notna(row.get('ma30')) else None,
+                "ma60": float(row['ma60']) if pd.notna(row.get('ma60')) else None
+            })
+        
+        return {
+            "analysis": analysis,
+            "history": history
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取股票 {code} 完整数据失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"获取数据时发生错误: {e}")
+
 
 @app.post("/api/stock/batch")
 def batch_analyze(codes: List[str]):
+    """批量分析股票"""
     results = []
     for code in codes:
         try:
+            # 简单校验
+            if len(code) != 6 or not code.isdigit():
+                continue
             result = analyzer.analyze_stock(code)
             if result:
                 results.append({
@@ -124,7 +176,8 @@ def batch_analyze(codes: List[str]):
                     "score": int(result['score']),
                     "latest_price": float(result['latest_price'])
                 })
-        except:
+        except Exception as e:
+            logger.warning(f"批量分析 {code} 失败: {e}")
             continue
     return results
 
@@ -132,9 +185,62 @@ def batch_analyze(codes: List[str]):
 def get_hot_stocks():
     return analyzer.get_hot_stocks()
 
+
 @app.get("/api/market/indices")
 def get_market_indices():
     return analyzer.get_market_indices()
+
+
+@app.get("/api/index/{code}/history")
+async def get_index_history(code: str):
+    """
+    获取指数历史K线数据
+    支持: A股指数(sh/sz开头), 港股指数(^HSI等), 美股指数(^NDX等)
+    """
+    try:
+        history = []
+        
+        # A股指数 (sh000001, sz399001 等)
+        if code.startswith('sh') or code.startswith('sz'):
+            df = ak.stock_zh_index_daily(symbol=code)
+            if df is not None and len(df) > 0:
+                # 取最近90天
+                df = df.tail(90)
+                for _, row in df.iterrows():
+                    history.append({
+                        "time": row['date'].strftime('%Y-%m-%d') if hasattr(row['date'], 'strftime') else str(row['date']),
+                        "open": float(row['open']),
+                        "high": float(row['high']),
+                        "low": float(row['low']),
+                        "close": float(row['close']),
+                        "volume": int(row['volume']) if 'volume' in row else 0
+                    })
+        
+        # 港股/美股指数 (^HSI, ^NDX, ^GSPC 等) - 使用 yfinance
+        elif code.startswith('^') or code.endswith('.HK'):
+            import yfinance as yf
+            ticker = yf.Ticker(code)
+            df = ticker.history(period="3mo")
+            if df is not None and len(df) > 0:
+                for date, row in df.iterrows():
+                    history.append({
+                        "time": date.strftime('%Y-%m-%d'),
+                        "open": float(row['Open']),
+                        "high": float(row['High']),
+                        "low": float(row['Low']),
+                        "close": float(row['Close']),
+                        "volume": int(row['Volume']) if 'Volume' in row else 0
+                    })
+        
+        if not history:
+            raise HTTPException(status_code=404, detail=f"无法获取指数 {code} 的历史数据")
+        
+        return history
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取指数 {code} 历史失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取指数历史失败: {e}")
 
 @app.get("/api/stocks/search")
 async def search_stocks(q: str, limit: int = 10):
@@ -276,11 +382,11 @@ async def get_hot_sectors():
 
 @app.get("/api/user/stocks")
 async def get_user_stocks():
-    """获取用户股票分组信息（快速返回，不获取实时行情）"""
-    # 获取分组列表
+    """获取用户股票分组信息（包含实时行情）- 使用缓存数据"""
+    from analyzers.data_fetcher import get_stock_data
+    
     groups = user_stock_service.get_stocks()
     
-    # 填充数据
     result = {
         "favorites": [],
         "holdings": [],
@@ -292,22 +398,31 @@ async def get_user_stocks():
         for code in codes:
             stock_info = {
                 "code": code,
-                "name": code,  # 默认值
+                "name": stock_list_service.get_stock_name(code) or code,
                 "price": 0,
                 "change_pct": 0
             }
             
-            # 从stock_list_service获取股票名称（已缓存，速度快）
+            # 🆕 使用统一的缓存数据获取（复用 data_fetcher 的缓存）
             try:
-                stock_name = stock_list_service.get_stock_name(code)
-                if stock_name:
-                    stock_info["name"] = stock_name
+                # 只需要最近几天数据计算涨跌幅，但用相同天数以命中缓存
+                data = get_stock_data(code, days=90)
+                if data is not None and len(data) >= 2:
+                    latest = data.iloc[-1]
+                    prev = data.iloc[-2]
+                    close = float(latest['close'])
+                    prev_close = float(prev['close'])
+                    change_pct = (close - prev_close) / prev_close * 100 if prev_close else 0
+                    stock_info['price'] = round(close, 2)
+                    stock_info['change_pct'] = round(change_pct, 2)
             except Exception as e:
-                pass
+                logger.warning(f"获取 {code} 行情失败: {e}")
             
             result[group_name].append(stock_info)
     
     return result
+
+
 
 @app.post("/api/user/stocks")
 async def add_user_stock(item: StockItem):

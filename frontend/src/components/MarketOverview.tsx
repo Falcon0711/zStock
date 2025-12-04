@@ -8,7 +8,6 @@ interface MarketOverviewProps {
 
 const MarketOverview: React.FC<MarketOverviewProps> = ({ indices, loading }) => {
     const { theme } = useTheme();
-    console.log('✅ MarketOverview rendering, indices count:', indices.length);
 
     if (loading) {
         return (

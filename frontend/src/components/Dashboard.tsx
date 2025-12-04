@@ -10,7 +10,6 @@ interface DashboardProps {
 
 const Dashboard: React.FC<DashboardProps> = ({ analysis, history, loading }) => {
     const { theme } = useTheme();
-    console.log('✅ Dashboard rendering');
 
     if (loading) {
         return (
@@ -27,6 +26,49 @@ const Dashboard: React.FC<DashboardProps> = ({ analysis, history, loading }) => 
                     @keyframes spin {
                         from { transform: rotate(0deg); }
                         to { transform: rotate(360deg); }
+                    }
+                `}</style>
+            </div>
+        );
+    }
+
+    // 🆕 如果没有 analysis 但有 history，只显示K线图（用于指数展示）
+    if (!analysis && history && history.length > 0) {
+        return (
+            <div style={{
+                padding: '2.5rem',
+                maxWidth: '1200px',
+                margin: '0 auto',
+                animation: 'fadeIn 0.5s ease-out'
+            }}>
+                <div style={{
+                    background: theme.colors.bgSecondary,
+                    borderRadius: '24px',
+                    padding: '2rem',
+                    boxShadow: theme.mode === 'dark'
+                        ? '0 4px 20px rgba(0,0,0,0.2)'
+                        : '0 4px 20px rgba(0,0,0,0.05)',
+                    transition: 'all 0.3s ease'
+                }}>
+                    <h3 style={{
+                        color: theme.colors.textPrimary,
+                        fontSize: '1.2rem',
+                        fontWeight: 600,
+                        marginTop: 0,
+                        marginBottom: '1.5rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        letterSpacing: '-0.01em'
+                    }}>
+                        📈 K线走势
+                    </h3>
+                    <KLineChart data={history} theme={theme} />
+                </div>
+                <style>{`
+                    @keyframes fadeIn {
+                        from { opacity: 0; transform: translateY(10px); }
+                        to { opacity: 1; transform: translateY(0); }
                     }
                 `}</style>
             </div>

@@ -3,7 +3,6 @@ import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import ErrorBoundary from './ErrorBoundary.tsx'
 
-console.log('✅ main.tsx is executing')
 
 // 添加全局错误处理
 window.addEventListener('error', (event) => {
@@ -15,13 +14,11 @@ window.addEventListener('unhandledrejection', (event) => {
 });
 
 const rootElement = document.getElementById('root');
-console.log('✅ Root element found:', rootElement);
 
 if (!rootElement) {
   throw new Error('Root element not found');
 }
 
-console.log('⏳ About to render App component...');
 
 createRoot(rootElement).render(
   <StrictMode>
@@ -31,4 +28,3 @@ createRoot(rootElement).render(
   </StrictMode>,
 )
 
-console.log('✅ React app mounted successfully')

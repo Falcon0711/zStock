@@ -38,3 +38,14 @@ echo "✅ 部署完成！"
 echo "后端日志: docker logs -f stock_backend"
 echo "访问地址: http://localhost (或服务器公网IP)"
 echo "========================================"
+
+# 4. 询问是否同步数据
+read -p "是否立即在后台同步全市场历史数据？(建议首次部署执行，耗时约40分钟) [y/N] " sync_choice
+if [[ "$sync_choice" =~ ^[Yy]$ ]]; then
+    echo "🚀 正在后台启动全量同步..."
+    docker exec -d stock_backend python /app/scripts/sync_data.py --all
+    echo "✅ 同步任务已在后台运行！"
+    echo "查看同步进度: docker logs -f stock_backend"
+else
+    echo "已跳过同步。后续可手动运行: docker exec stock_backend python /app/scripts/sync_data.py --watchlist"
+fi

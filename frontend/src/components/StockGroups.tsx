@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useTheme } from '../ThemeContext';
 import SearchSuggestions from './SearchSuggestions';
 
@@ -18,41 +18,17 @@ interface StockGroupsData {
 
 interface StockGroupsProps {
     onSelectStock: (code: string) => void;
+    groups: StockGroupsData;  // 🆕 从父组件接收数据
+    loading: boolean;         // 🆕 从父组件接收加载状态
+    onRefresh: () => void;    // 🆕 刷新回调
 }
 
-const StockGroups: React.FC<StockGroupsProps> = ({ onSelectStock }) => {
+const StockGroups: React.FC<StockGroupsProps> = ({ onSelectStock, groups, loading, onRefresh }) => {
     const { theme } = useTheme();
-    const [groups, setGroups] = useState<StockGroupsData>({
-        favorites: [],
-        holdings: [],
-        watching: []
-    });
-    const [loading, setLoading] = useState(true);
     const [addingTo, setAddingTo] = useState<string | null>(null);
     const [inputCode, setInputCode] = useState('');
     const [suggestions, setSuggestions] = useState<any[]>([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
-
-    const fetchStocks = async () => {
-        try {
-            const response = await fetch('http://localhost:8000/api/user/stocks');
-            if (response.ok) {
-                const data = await response.json();
-                setGroups(data);
-            }
-        } catch (error) {
-            console.error('Error fetching user stocks:', error);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        fetchStocks();
-        // Set up polling for real-time updates
-        const interval = setInterval(fetchStocks, 10000); // Update every 10s
-        return () => clearInterval(interval);
-    }, []);
 
     const handleAddStock = async () => {
         if (!addingTo || !inputCode || inputCode.length !== 6) return;
@@ -67,7 +43,7 @@ const StockGroups: React.FC<StockGroupsProps> = ({ onSelectStock }) => {
             if (response.ok) {
                 setInputCode('');
                 setAddingTo(null);
-                fetchStocks(); // Refresh list
+                onRefresh(); // 🆕 通知父组件刷新
             }
         } catch (error) {
             console.error('Error adding stock:', error);
@@ -76,7 +52,6 @@ const StockGroups: React.FC<StockGroupsProps> = ({ onSelectStock }) => {
 
     const handleRemoveStock = async (group: string, code: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        // 直接删除，不需要确认
 
         try {
             const response = await fetch('http://localhost:8000/api/user/stocks', {
@@ -86,7 +61,7 @@ const StockGroups: React.FC<StockGroupsProps> = ({ onSelectStock }) => {
             });
 
             if (response.ok) {
-                fetchStocks();
+                onRefresh(); // 🆕 通知父组件刷新
             }
         } catch (error) {
             console.error('Error removing stock:', error);

@@ -1,13 +1,26 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { ThemeProvider, useTheme } from './ThemeContext';
 import Dashboard from './components/Dashboard';
 import MarketTicker from './components/MarketTicker';
 import StockGroups from './components/StockGroups';
 import SearchSuggestions from './components/SearchSuggestions';
-import { analyzeStock, fetchHistory, searchStocks } from './services/api';
+import { fetchStockFull, fetchIndexHistory, searchStocks } from './services/api';
 import type { AnalysisResult, ChartData, StockSuggestion } from './services/api';
 
-console.log('✅ App component function called');
+// 股票分组数据类型
+interface StockQuote {
+  code: string;
+  name: string;
+  price: number;
+  change_pct: number;
+}
+
+interface StockGroupsData {
+  favorites: StockQuote[];
+  holdings: StockQuote[];
+  watching: StockQuote[];
+}
+
 
 const AppContent: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
@@ -17,13 +30,52 @@ const AppContent: React.FC = () => {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [history, setHistory] = useState<ChartData[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
+  const [indexName, setIndexName] = useState<string>(''); // 🆕 用于显示指数名称
 
   // 搜索建议状态
   const [suggestions, setSuggestions] = useState<StockSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
   const searchTimeoutRef = useRef<number | null>(null);
 
-  console.log('✅ App component state initialized');
+  // 🆕 自选股数据状态 - 提升到App层保持持久化
+  const [stockGroups, setStockGroups] = useState<StockGroupsData>({
+    favorites: [],
+    holdings: [],
+    watching: []
+  });
+  const [stockGroupsLoading, setStockGroupsLoading] = useState(true);
+  const stockGroupsLoaded = useRef(false);
+
+  // 🆕 加载自选股数据（只在首次加载）
+  const fetchStockGroups = useCallback(async (force = false) => {
+    if (stockGroupsLoaded.current && !force) return;
+
+    try {
+      const response = await fetch('http://localhost:8000/api/user/stocks');
+      if (response.ok) {
+        const data = await response.json();
+        setStockGroups(data);
+        stockGroupsLoaded.current = true;
+      }
+    } catch (error) {
+      console.error('Error fetching user stocks:', error);
+    } finally {
+      setStockGroupsLoading(false);
+    }
+  }, []);
+
+  // 🆕 首次加载自选股
+  useEffect(() => {
+    fetchStockGroups();
+    // 定时刷新（仅在主页时）
+    const interval = setInterval(() => {
+      if (!analysis) {
+        fetchStockGroups(true);
+      }
+    }, 30000); // 30秒刷新一次
+    return () => clearInterval(interval);
+  }, [fetchStockGroups, analysis]);
+
 
 
 
@@ -37,16 +89,32 @@ const AppContent: React.FC = () => {
     setSearchInput(code);
 
     try {
-      const [analysisData, historyData] = await Promise.all([
-        analyzeStock(code),
-        fetchHistory(code)
-      ]);
-
-      setAnalysis(analysisData);
-      setHistory(historyData);
+      // 🆕 使用合并端点，一次请求获取分析和历史数据
+      const { analysis, history } = await fetchStockFull(code);
+      setAnalysis(analysis);
+      setHistory(history);
     } catch (error) {
       console.error('Analysis failed', error);
       alert('分析失败，请检查代码或网络');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 🆕 处理点击指数 - 获取K线历史数据
+  const handleIndexClick = async (code: string, name: string) => {
+    setLoading(true);
+    setIndexName(name);
+    setSearchInput(code);
+    setAnalysis(null); // 清除个股分析数据
+
+    try {
+      const historyData = await fetchIndexHistory(code);
+      setHistory(historyData);
+    } catch (error) {
+      console.error('获取指数历史失败:', error);
+      alert('获取指数历史数据失败');
+      setHistory([]);
     } finally {
       setLoading(false);
     }
@@ -56,6 +124,7 @@ const AppContent: React.FC = () => {
     setAnalysis(null);
     setHistory([]);
     setSearchInput('');
+    setIndexName(''); // 🆕 清除指数名称
     setSuggestions([]);
     setShowSuggestions(false);
   };
@@ -98,7 +167,6 @@ const AppContent: React.FC = () => {
     handleAnalyze(code);
   };
 
-  console.log('✅ About to render App JSX');
 
   return (
     <div style={{
@@ -110,7 +178,7 @@ const AppContent: React.FC = () => {
     }}>
       <div>
         {/* Market Ticker - 行情横条 */}
-        <MarketTicker />
+        <MarketTicker onSelectIndex={handleIndexClick} />
 
         {/* Header */}
         <div style={{
@@ -271,6 +339,18 @@ const AppContent: React.FC = () => {
         <div style={{ overflow: 'initial' }}>
           {analysis ? (
             <Dashboard analysis={analysis} history={history} loading={loading} />
+          ) : history.length > 0 && indexName ? (
+            /* 🆕 显示指数K线图 */
+            <div style={{ padding: '2rem' }}>
+              <h2 style={{
+                textAlign: 'center',
+                color: theme.colors.textPrimary,
+                marginBottom: '1rem'
+              }}>
+                {indexName} K线图
+              </h2>
+              <Dashboard analysis={null as any} history={history} loading={loading} />
+            </div>
           ) : (
             <div style={{
               display: 'flex',
@@ -288,7 +368,12 @@ const AppContent: React.FC = () => {
                 请输入股票代码开始分析，或管理您的股票分组
               </div>
 
-              <StockGroups onSelectStock={handleAnalyze} />
+              <StockGroups
+                onSelectStock={handleAnalyze}
+                groups={stockGroups}
+                loading={stockGroupsLoading}
+                onRefresh={() => fetchStockGroups(true)}
+              />
             </div>
           )}
         </div>

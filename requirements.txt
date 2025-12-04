@@ -1,20 +1,21 @@
-# 多市场智能交易分析系统 - 依赖包
-# Multi-Market Intelligent Trading Analysis System - Dependencies
+# 股票分析系统 - 依赖包 (版本已锁定)
+# Stock Analysis System - Dependencies (Locked)
 
 # Web框架
-fastapi>=0.104.0
-uvicorn>=0.24.0
+fastapi==0.123.5
+uvicorn==0.38.0
 
 # 数据处理
-pandas>=2.0.0
-numpy>=1.24.0
+pandas==2.3.3
+numpy==2.0.2
 
-# 数据获取
-akshare
+# 数据获取 (版本锁定防止API变更)
+akshare==1.17.91
+yfinance==0.2.66
+tushare==1.4.24
 
 # 其他工具库
 python-dateutil>=2.8.0
 alpha-vantage==3.0.0
 requests-cache==1.2.1
-yfinance
-tushare
+

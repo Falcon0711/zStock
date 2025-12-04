@@ -17,7 +17,11 @@ interface TickerResponse {
     update_time: string;
 }
 
-const MarketTicker: React.FC = () => {
+interface MarketTickerProps {
+    onSelectIndex?: (code: string, name: string) => void;
+}
+
+const MarketTicker: React.FC<MarketTickerProps> = ({ onSelectIndex }) => {
     const { theme } = useTheme();
     const [tickers, setTickers] = useState<TickerData[]>([]);
     const [loading, setLoading] = useState(true);
@@ -115,6 +119,7 @@ const MarketTicker: React.FC = () => {
                     return (
                         <div
                             key={ticker.code}
+                            onClick={() => onSelectIndex?.(ticker.code, ticker.name)}
                             style={{
                                 display: 'flex',
                                 flexDirection: 'column',

@@ -42,6 +42,12 @@ export interface IndexData {
     data: { time: string; value: number }[];
 }
 
+// 🆕 合并数据类型
+export interface FullStockData {
+    analysis: AnalysisResult;
+    history: ChartData[];
+}
+
 export const fetchHotStocks = async (): Promise<StockInfo[]> => {
     const response = await api.get('/stocks/hot');
     return response.data;
@@ -59,6 +65,18 @@ export const analyzeStock = async (code: string): Promise<AnalysisResult> => {
 
 export const fetchHistory = async (code: string): Promise<ChartData[]> => {
     const response = await api.get(`/stock/${code}/history`);
+    return response.data;
+};
+
+// 🆕 使用合并端点一次获取分析和历史数据
+export const fetchStockFull = async (code: string): Promise<FullStockData> => {
+    const response = await api.get(`/stock/${code}/full`);
+    return response.data;
+};
+
+// 🆕 获取指数历史K线数据
+export const fetchIndexHistory = async (code: string): Promise<ChartData[]> => {
+    const response = await api.get(`/index/${code}/history`);
     return response.data;
 };
 
