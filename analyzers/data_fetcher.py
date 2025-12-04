@@ -195,7 +195,17 @@ def _fetch_from_network(stock_code: str, days: int, start_date: str,
             if data is not None and not data.empty:
                 data = _clean_data(data, days)
                 
-                # 更新缓存
+                # ===== 自动保存到本地SQLite数据库 =====
+                try:
+                    from services.local_data_service import get_local_data_service
+                    local_service = get_local_data_service()
+                    saved_count = local_service.save_stock_data(stock_code, data)
+                    if saved_count > 0:
+                        logger.info(f"已保存到本地: {stock_code} ({saved_count}条新记录)")
+                except Exception as save_error:
+                    logger.warning(f"保存到本地失败: {save_error}")
+                
+                # 更新内存缓存
                 if len(_stock_data_cache) >= MAX_CACHE_SIZE:
                     clear_expired_cache()
                     if len(_stock_data_cache) >= MAX_CACHE_SIZE:
