@@ -33,16 +33,104 @@ from services.local_data_service import get_local_data_service
 
 
 def get_all_a_share_codes():
-    """获取所有A股股票代码列表"""
+    """
+    获取所有A股股票代码列表
+    优先级: 东方财富 API -> 腾讯 API -> 本地缓存
+    """
+    codes = []
+    
+    # 方法1: 东方财富 API (AkShare 默认)
     try:
-        print("📋 正在获取A股股票列表...")
+        print("📋 正在获取A股股票列表 (东方财富)...")
         df = ak.stock_zh_a_spot_em()
         codes = df['代码'].tolist()
-        print(f"✅ 共获取 {len(codes)} 只股票")
+        print(f"✅ 共获取 {len(codes)} 只股票 (东方财富)")
+        # 保存到本地缓存
+        save_stock_list_cache(codes)
         return codes
     except Exception as e:
-        print(f"❌ 获取股票列表失败: {e}")
-        return []
+        print(f"⚠️ 东方财富API失败: {e}")
+    
+    # 方法2: 腾讯 API
+    try:
+        print("📋 正在获取A股股票列表 (腾讯)...")
+        import requests
+        
+        # 腾讯股票列表 API
+        codes = []
+        for market in ['sh', 'sz']:
+            url = f"http://qt.gtimg.cn/q={market}"
+            # 获取沪市和深市的股票列表
+            # 使用腾讯行情 API 获取
+            list_url = f"http://stock.gtimg.cn/data/index.php?appn=rank&t=rank{market}/chr&p=1&o=0&l=5000&v=list_data"
+            resp = requests.get(list_url, timeout=10)
+            if resp.status_code == 200:
+                # 解析返回的数据
+                text = resp.text
+                # 格式: var list_data={data:"code1,code2,...",total:xxx}
+                import re
+                match = re.search(r'data:"([^"]+)"', text)
+                if match:
+                    stock_list = match.group(1).split(',')
+                    for item in stock_list:
+                        if item and len(item) >= 6:
+                            code = item[:6]
+                            if code.isdigit():
+                                codes.append(code)
+        
+        if codes:
+            codes = list(set(codes))  # 去重
+            print(f"✅ 共获取 {len(codes)} 只股票 (腾讯)")
+            save_stock_list_cache(codes)
+            return codes
+    except Exception as e:
+        print(f"⚠️ 腾讯API失败: {e}")
+    
+    # 方法3: 从本地缓存读取
+    try:
+        print("📋 尝试从本地缓存读取股票列表...")
+        codes = load_stock_list_cache()
+        if codes:
+            print(f"✅ 从缓存获取 {len(codes)} 只股票")
+            return codes
+    except Exception as e:
+        print(f"⚠️ 读取缓存失败: {e}")
+    
+    print("❌ 所有获取股票列表的方法都失败了")
+    return []
+
+
+def save_stock_list_cache(codes: list):
+    """保存股票列表到本地缓存"""
+    try:
+        import json
+        cache_path = os.path.join(project_root, "data", "stock_list_cache.json")
+        with open(cache_path, 'w') as f:
+            json.dump({
+                'codes': codes,
+                'updated_at': datetime.now().isoformat(),
+                'count': len(codes)
+            }, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"⚠️ 保存缓存失败: {e}")
+
+
+def load_stock_list_cache():
+    """从本地缓存读取股票列表"""
+    import json
+    cache_path = os.path.join(project_root, "data", "stock_list_cache.json")
+    if os.path.exists(cache_path):
+        with open(cache_path, 'r') as f:
+            data = json.load(f)
+            # 如果缓存是新格式（包含 codes 字段）
+            if 'codes' in data:
+                return data['codes']
+            # 兼容旧格式（直接是列表或字典列表）
+            elif isinstance(data, list):
+                if data and isinstance(data[0], dict):
+                    return [item.get('code', item.get('symbol', '')) for item in data]
+                return data
+    return []
 
 
 def get_watchlist_codes():
@@ -66,14 +154,95 @@ def get_hot_stock_codes():
     return ['600519', '000001', '000858', '601398', '002594']
 
 
-def sync_stock_data(code: str, local_service, days: int = 3650):
+def fetch_from_tencent(code: str, start_date: str = "", days: int = 3650):
+    """
+    从腾讯 API 获取股票历史数据
+    
+    Args:
+        code: 股票代码
+        start_date: 开始日期 YYYYMMDD (可选)
+        days: 历史天数
+    
+    Returns:
+        DataFrame or None
+    """
+    import requests
+    import re
+    
+    try:
+        # 腾讯股票代码格式: sh600519 或 sz000001
+        if code.startswith('6'):
+            tc_code = f"sh{code}"
+        else:
+            tc_code = f"sz{code}"
+        
+        # 腾讯日K线 API - 使用正确的格式
+        # 参数: 股票代码,周期,开始日期,结束日期,数量,复权类型
+        url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?_var=kline_dayqfq&param={tc_code},day,,,{min(days, 800)},qfq"
+        resp = requests.get(url, timeout=15)
+        
+        if resp.status_code != 200:
+            return None
+        
+        # 响应格式: kline_dayqfq={...}
+        text = resp.text
+        json_match = re.search(r'=(\{.*\})', text)
+        if not json_match:
+            return None
+        
+        import json
+        data = json.loads(json_match.group(1))
+        
+        if data.get('code') != 0:
+            return None
+        
+        # 提取K线数据
+        stock_data = data.get('data', {}).get(tc_code, {})
+        day_data = stock_data.get('qfqday') or stock_data.get('day')
+        
+        if not day_data:
+            return None
+        
+        # 腾讯格式可能有 6 或 7 列，动态处理
+        # 6列: [日期, 开盘, 收盘, 最高, 最低, 成交量]
+        # 7列: [日期, 开盘, 收盘, 最高, 最低, 成交量, 其他]
+        rows = []
+        for item in day_data:
+            if len(item) >= 6:
+                rows.append({
+                    'date': item[0],
+                    'open': float(item[1]),
+                    'close': float(item[2]),
+                    'high': float(item[3]),
+                    'low': float(item[4]),
+                    'volume': float(item[5])
+                })
+        
+        if not rows:
+            return None
+        
+        df = pd.DataFrame(rows)
+        
+        # 如果指定了开始日期，过滤数据
+        if start_date:
+            start_dt = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:8]}"
+            df = df[df['date'] >= start_dt]
+        
+        return df
+    except Exception as e:
+        return None
+
+
+def sync_stock_data(code: str, local_service, days: int = 3650, max_retries: int = 3):
     """
     同步单只股票的历史数据（增量更新）
+    支持多数据源和重试机制
     
     Args:
         code: 股票代码
         local_service: 本地数据服务实例
         days: 历史数据天数（默认10年）
+        max_retries: 最大重试次数
     
     Returns:
         (success: bool, new_records: int)
@@ -88,36 +257,45 @@ def sync_stock_data(code: str, local_service, days: int = 3650):
             today = datetime.now().strftime('%Y%m%d')
             
             if start_date >= today:
-                print(f"⏭️ {code}: 数据已是最新")
-                return True, 0
+                return True, 0  # 静默跳过，不打印
         else:
             # 全量同步：获取指定天数的历史
             start_date = (datetime.now() - timedelta(days=days)).strftime('%Y%m%d')
         
-        # 从 AkShare 获取数据
-        time.sleep(0.3)  # 避免请求过快
+        df = None
         
-        df = ak.stock_zh_a_hist(
-            symbol=code,
-            period="daily",
-            start_date=start_date,
-            adjust="qfq"
-        )
+        # 方法1: AkShare (东方财富) - 带重试
+        for attempt in range(max_retries):
+            try:
+                time.sleep(0.2 + attempt * 0.3)  # 递增延迟
+                df = ak.stock_zh_a_hist(
+                    symbol=code,
+                    period="daily",
+                    start_date=start_date,
+                    adjust="qfq"
+                )
+                if df is not None and not df.empty:
+                    # 列名映射
+                    column_mapping = {
+                        '日期': 'date',
+                        '开盘': 'open',
+                        '最高': 'high',
+                        '最低': 'low',
+                        '收盘': 'close',
+                        '成交量': 'volume'
+                    }
+                    df = df.rename(columns=column_mapping)
+                    break
+            except Exception:
+                if attempt < max_retries - 1:
+                    continue
+        
+        # 方法2: 腾讯 API (备选)
+        if df is None or df.empty:
+            df = fetch_from_tencent(code, start_date, days)
         
         if df is None or df.empty:
-            print(f"⚠️ {code}: 无新数据")
-            return True, 0
-        
-        # 列名映射
-        column_mapping = {
-            '日期': 'date',
-            '开盘': 'open',
-            '最高': 'high',
-            '最低': 'low',
-            '收盘': 'close',
-            '成交量': 'volume'
-        }
-        df = df.rename(columns=column_mapping)
+            return True, 0  # 无新数据
         
         # 保存到本地
         new_records = local_service.save_stock_data(code, df)
