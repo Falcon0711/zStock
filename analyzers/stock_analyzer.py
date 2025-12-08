@@ -108,6 +108,35 @@ class StockAnalyzer(BaseAnalyzer):
 
         return signals
 
+    def calculate_score(self, signals: dict) -> int:
+        """计算综合评分"""
+        score = 50  # 基础分数
+        
+        # 信号权重配置
+        weights = {
+            'zhixing': 25,  # 趋势最重要
+            'bbi': 22,      # 多空分界次之
+            'macd': 20,     # 动量指标
+            'kdj': 18       # 超买超卖辅助
+        }
+        
+        for key, value in signals.items():
+            if not value:  # 跳过False信号
+                continue
+                
+            if 'buy' in key:
+                if 'zhixing' in key: score += weights['zhixing']
+                elif 'bbi' in key: score += weights['bbi']
+                elif 'macd' in key: score += weights['macd']
+                elif 'kdj' in key: score += weights['kdj']
+            elif 'sell' in key:
+                if 'zhixing' in key: score -= weights['zhixing']
+                elif 'bbi' in key: score -= weights['bbi']
+                elif 'macd' in key: score -= weights['macd']
+                elif 'kdj' in key: score -= weights['kdj']
+                
+        return max(0, min(100, score))
+
     def analyze_stock(self, stock_code: str, use_cache: bool = True) -> dict:
         """
         完整的股票分析

@@ -15,6 +15,11 @@ from services.market_data_service import MarketDataService
 from services.sector_data_service import SectorDataService
 from services.user_stock_service import UserStockService
 from services.stock_list_service import StockListService
+from services.realtime_quotation_service import get_realtime_service
+from services.realtime_kline_service import get_realtime_kline_service
+from services.hk_quotation_service import get_hk_quotation_service
+from services.hk_kline_service import get_hk_kline_service
+from services.exchange_rate_service import get_exchange_rate_service
 from api.validators import validate_stock_code
 from utils.logger import get_logger
 from fastapi.staticfiles import StaticFiles
@@ -482,3 +487,439 @@ def get_stock_history(code: str):
                 detail=f"无法获取股票 {code} 的真实历史数据: {error_msg}"
             )
         raise HTTPException(status_code=500, detail=f"获取历史数据时发生错误: {error_msg}")
+
+
+# ============================================
+# 实时行情 API 端点
+# ============================================
+
+# 初始化实时行情服务
+realtime_service = get_realtime_service('sina')
+realtime_kline_service = get_realtime_kline_service('sina')
+hk_quotation_service = get_hk_quotation_service()
+hk_kline_service = get_hk_kline_service()
+exchange_rate_service = get_exchange_rate_service()
+
+
+@app.get("/api/realtime/{code}")
+async def get_realtime_quote(code: str):
+    """
+    获取单只股票实时行情
+    
+    Args:
+        code: 6位股票代码，如 '600519'
+    
+    Returns:
+        实时行情数据（包含现价、开盘、最高、最低、成交量等）
+    """
+    try:
+        # 验证股票代码格式
+        if not code or len(code) != 6 or not code.isdigit():
+            raise HTTPException(
+                status_code=400,
+                detail=f"股票代码格式错误: {code}。请输入6位数字代码"
+            )
+        
+        data = realtime_service.get_realtime(code)
+        
+        if not data or code not in data:
+            # 尝试带前缀查找
+            for key in data:
+                if key.endswith(code):
+                    quote = data[key]
+                    break
+            else:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"无法获取股票 {code} 的实时行情"
+                )
+        else:
+            quote = data[code]
+        
+        # 计算涨跌幅
+        now = quote.get('now', 0)
+        close = quote.get('close', now)  # 昨收
+        change_pct = 0
+        if close and close > 0:
+            change_pct = round((now - close) / close * 100, 2)
+        
+        return {
+            "code": code,
+            "name": quote.get('name', ''),
+            "now": float(now),
+            "open": float(quote.get('open', 0)),
+            "close": float(close),
+            "high": float(quote.get('high', 0)),
+            "low": float(quote.get('low', 0)),
+            "volume": int(quote.get('turnover', 0)),
+            "turnover": float(quote.get('volume', 0)),
+            "change_pct": change_pct,
+            "bid1": float(quote.get('bid1', 0)),
+            "ask1": float(quote.get('ask1', 0)),
+            "time": quote.get('time', ''),
+            "date": quote.get('date', datetime.now().strftime('%Y-%m-%d'))
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取 {code} 实时行情失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"获取实时行情失败: {e}")
+
+
+@app.post("/api/realtime/batch")
+async def get_realtime_batch(codes: List[str]):
+    """
+    批量获取实时行情（最多50只）
+    
+    Args:
+        codes: 股票代码列表，如 ['600519', '000001', '300750']
+    
+    Returns:
+        实时行情数据列表
+    """
+    try:
+        # 限制批量数量
+        if len(codes) > 50:
+            codes = codes[:50]
+        
+        # 过滤无效代码
+        valid_codes = [c for c in codes if c and len(c) == 6 and c.isdigit()]
+        
+        if not valid_codes:
+            return []
+        
+        data = realtime_service.get_realtime(valid_codes)
+        
+        results = []
+        for code in valid_codes:
+            quote = data.get(code)
+            if not quote:
+                # 尝试带前缀查找
+                for key in data:
+                    if key.endswith(code):
+                        quote = data[key]
+                        break
+            
+            if quote and quote.get('now', 0) > 0:
+                now = quote.get('now', 0)
+                close = quote.get('close', now)
+                change_pct = 0
+                if close and close > 0:
+                    change_pct = round((now - close) / close * 100, 2)
+                
+                results.append({
+                    "code": code,
+                    "name": quote.get('name', ''),
+                    "now": float(now),
+                    "change_pct": change_pct,
+                    "high": float(quote.get('high', 0)),
+                    "low": float(quote.get('low', 0)),
+                    "volume": int(quote.get('turnover', 0)),
+                })
+        
+        return results
+    except Exception as e:
+        logger.error(f"批量获取实时行情失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"批量获取实时行情失败: {e}")
+
+
+@app.get("/api/realtime/market")
+async def get_market_snapshot(limit: int = 50):
+    """
+    获取全市场行情快照
+    
+    Args:
+        limit: 返回股票数量，默认50，最大500
+    
+    Returns:
+        全市场行情数据列表
+    """
+    try:
+        # 限制数量
+        limit = min(max(1, limit), 500)
+        
+        data = realtime_service.get_market_snapshot(limit=limit)
+        
+        results = []
+        for code, quote in data.items():
+            if quote.get('now', 0) > 0:
+                now = quote.get('now', 0)
+                close = quote.get('close', now)
+                change_pct = 0
+                if close and close > 0:
+                    change_pct = round((now - close) / close * 100, 2)
+                
+                results.append({
+                    "code": code,
+                    "name": quote.get('name', ''),
+                    "now": float(now),
+                    "change_pct": change_pct,
+                    "high": float(quote.get('high', 0)),
+                    "low": float(quote.get('low', 0)),
+                    "volume": int(quote.get('turnover', 0)),
+                })
+        
+        # 按涨跌幅排序
+        results.sort(key=lambda x: x['change_pct'], reverse=True)
+        
+        return {
+            "data": results,
+            "total": len(results),
+            "update_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+    except Exception as e:
+        logger.error(f"获取市场快照失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"获取市场快照失败: {e}")
+
+
+@app.get("/api/stock/{code}/kline-realtime")
+async def get_kline_with_realtime(code: str, days: int = 90):
+    """
+    获取历史K线 + 实时更新
+    
+    如果当日交易中，会将实时行情合并到历史K线的最后一根K线中
+    
+    Args:
+        code: 6位股票代码
+        days: 历史天数，默认90天
+    
+    Returns:
+        K线数据列表（历史 + 实时）
+    """
+    try:
+        # 验证股票代码格式
+        if not code or len(code) != 6 or not code.isdigit():
+            raise HTTPException(
+                status_code=400,
+                detail=f"股票代码格式错误: {code}。请输入6位数字代码"
+            )
+        
+        days = min(max(1, days), 365)  # 限制1-365天
+        
+        klines = realtime_kline_service.get_kline_with_realtime(code, days=days)
+        
+        if not klines:
+            raise HTTPException(
+                status_code=404,
+                detail=f"无法获取股票 {code} 的K线数据"
+            )
+        
+        return klines
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取 {code} 实时K线失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"获取实时K线失败: {e}")
+
+
+# ============================================
+# 港股行情 API 端点
+# ============================================
+
+@app.get("/api/hk/realtime/{code}")
+async def get_hk_realtime_quote(code: str):
+    """
+    获取单只港股实时行情
+    
+    Args:
+        code: 港股代码，如 '00700', '700', 'hk00700'
+    
+    Returns:
+        港股实时行情数据
+    """
+    try:
+        # 验证代码格式（允许4-5位数字或hk前缀）
+        clean_code = code.replace("hk", "").replace("HK", "")
+        if not clean_code.isdigit() or len(clean_code) > 5:
+            raise HTTPException(
+                status_code=400,
+                detail=f"港股代码格式错误: {code}。请输入4-5位数字代码"
+            )
+        
+        data = hk_quotation_service.get_stock_detail(code)
+        
+        if not data or data.get('price', 0) == 0:
+            raise HTTPException(
+                status_code=404,
+                detail=f"无法获取港股 {code} 的实时行情"
+            )
+        
+        return data
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取港股 {code} 实时行情失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"获取港股实时行情失败: {e}")
+
+
+@app.post("/api/hk/realtime/batch")
+async def get_hk_realtime_batch(codes: List[str]):
+    """
+    批量获取港股实时行情（最多30只）
+    
+    Args:
+        codes: 港股代码列表，如 ['00700', '00941', '09988']
+    
+    Returns:
+        港股实时行情数据列表
+    """
+    try:
+        # 限制批量数量
+        if len(codes) > 30:
+            codes = codes[:30]
+        
+        # 过滤无效代码
+        valid_codes = []
+        for c in codes:
+            clean_code = c.replace("hk", "").replace("HK", "")
+            if clean_code.isdigit() and len(clean_code) <= 5:
+                valid_codes.append(c)
+        
+        if not valid_codes:
+            return []
+        
+        data = hk_quotation_service.get_realtime(valid_codes)
+        
+        results = []
+        for code, quote in data.items():
+            if quote.get('price', 0) > 0:
+                results.append({
+                    "code": code,
+                    "name": quote.get('name', ''),
+                    "price": float(quote.get('price', 0)),
+                    "change": float(quote.get('change', 0)),
+                    "change_pct": float(quote.get('change_pct', 0)),
+                    "high": float(quote.get('high', 0)),
+                    "low": float(quote.get('low', 0)),
+                    "volume": float(quote.get('volume', 0)),
+                    "amount": float(quote.get('amount', 0)),
+                    "turnover": float(quote.get('turnover', 0)),
+                })
+        
+        return results
+    except Exception as e:
+        logger.error(f"批量获取港股实时行情失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"批量获取港股实时行情失败: {e}")
+
+
+@app.get("/api/hk/detail/{code}")
+async def get_hk_stock_detail(code: str):
+    """
+    获取港股详细信息
+    
+    包含完整的行情数据、市值、52周高低等信息
+    
+    Args:
+        code: 港股代码
+    
+    Returns:
+        详细港股数据
+    """
+    try:
+        data = hk_quotation_service.get_stock_detail(code)
+        
+        if not data:
+            raise HTTPException(
+                status_code=404,
+                detail=f"无法获取港股 {code} 的详细信息"
+            )
+        
+        return data
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取港股 {code} 详细信息失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"获取港股详细信息失败: {e}")
+
+
+@app.get("/api/hk/kline/{code}")
+async def get_hk_day_kline(code: str, days: int = 90):
+    """
+    获取港股历史日K线数据（前复权）
+    
+    Args:
+        code: 港股代码
+        days: 获取天数，默认90天，最大660天
+    
+    Returns:
+        [{date, open, close, high, low, volume}, ...]
+    """
+    try:
+        # 限制天数范围
+        days = min(max(1, days), 660)
+        
+        klines = hk_kline_service.get_day_kline(code, days=days)
+        
+        if not klines:
+            raise HTTPException(
+                status_code=404,
+                detail=f"无法获取港股 {code} 的K线数据"
+            )
+        
+        return klines
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取港股 {code} K线数据失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"获取港股K线数据失败: {e}")
+
+
+# ============================================
+# 外汇牌价 API 端点
+# ============================================
+
+@app.get("/api/exchange/usd")
+async def get_usd_exchange_rate():
+    """
+    获取美元汇率（中国银行）
+    
+    Returns:
+        {
+            'currency': '美元',
+            'currency_code': 'USD',
+            'buy_price': 7.25,
+            'sell_price': 7.28,
+            'middle_price': 7.265,
+            'update_time': '2025-12-08 10:30:00'
+        }
+    """
+    try:
+        rate = exchange_rate_service.get_exchange_rate("USD")
+        
+        if not rate:
+            raise HTTPException(
+                status_code=404,
+                detail="无法获取美元汇率数据"
+            )
+        
+        return rate
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取美元汇率失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"获取美元汇率失败: {e}")
+
+
+@app.get("/api/exchange/all")
+async def get_all_exchange_rates():
+    """
+    获取所有支持的外汇牌价
+    
+    Returns:
+        {'USD': {...}, ...}
+    """
+    try:
+        rates = exchange_rate_service.get_all_rates()
+        
+        if not rates:
+            raise HTTPException(
+                status_code=404,
+                detail="无法获取外汇牌价数据"
+            )
+        
+        return rates
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取外汇牌价失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"获取外汇牌价失败: {e}")

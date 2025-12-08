@@ -4,7 +4,9 @@
 
 ## 🌟 功能特性
 
-- **实时行情**: A股/港股/美股指数行情，点击查看K线
+- **实时行情**: A股/港股实时行情，支持新浪/腾讯数据源
+- **港股数据**: 港股实时行情 + 历史K线（前复权）
+- **外汇牌价**: 中国银行实时外汇牌价
 - **自选股管理**: 分组管理股票，实时显示涨跌
 - **技术指标**: MA均线、KDJ、MACD、BBI、知行趋势
 - **智能信号**: 自动生成金叉/死叉交易信号
@@ -14,8 +16,8 @@
 
 | 后端 | 前端 | 数据源 |
 |------|------|--------|
-| Python, FastAPI | React, TypeScript | AKShare |
-| Pandas, NumPy | Lightweight Charts | Yahoo Finance |
+| Python, FastAPI | React, TypeScript | AKShare, 新浪/腾讯财经 |
+| Pandas, NumPy | Lightweight Charts | 中国银行 |
 
 ## 🚀 快速开始
 
@@ -70,6 +72,24 @@ Stock/
 ├── docker-compose.yml
 └── requirements.txt
 ```
+
+## 📡 API 端点
+
+### A股行情
+- `GET /api/realtime/{code}` - 单只A股实时行情
+- `POST /api/realtime/batch` - 批量A股行情
+- `GET /api/realtime/market` - 全市场快照
+- `GET /api/stock/{code}/kline-realtime` - 历史+实时K线
+
+### 港股行情
+- `GET /api/hk/realtime/{code}` - 单只港股实时行情
+- `POST /api/hk/realtime/batch` - 批量港股行情
+- `GET /api/hk/detail/{code}` - 港股详细信息
+- `GET /api/hk/kline/{code}` - 港股历史K线
+
+### 外汇牌价
+- `GET /api/exchange/usd` - 美元汇率
+- `GET /api/exchange/all` - 所有汇率
 
 ## ⚙️ 环境变量
 
