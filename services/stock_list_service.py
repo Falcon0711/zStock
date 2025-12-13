@@ -11,6 +11,10 @@ import time
 import json
 import os
 
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
+
 
 class StockListService:
     """股票列表服务，提供股票搜索和缓存功能"""
@@ -32,7 +36,8 @@ class StockListService:
             file_mtime = os.path.getmtime(self.CACHE_FILE)
             age = time.time() - file_mtime
             return age > self._file_cache_max_age
-        except:
+        except (OSError, IOError) as e:
+            logger.warning(f"检查缓存文件失败: {e}")
             return True
     
     def _refresh_cache_async(self):
@@ -40,15 +45,15 @@ class StockListService:
         import threading
         def update():
             try:
-                print("🔄 后台更新股票列表...")
+                logger.info("后台更新股票列表...")
                 df = ak.stock_info_a_code_name()
                 if 'code' in df.columns and 'name' in df.columns:
                     os.makedirs(os.path.dirname(self.CACHE_FILE), exist_ok=True)
                     with open(self.CACHE_FILE, 'w', encoding='utf-8') as f:
                         json.dump(df[['code', 'name']].to_dict('records'), f, ensure_ascii=False)
-                    print(f"✅ 股票列表后台更新完成，共 {len(df)} 只股票")
+                    logger.info(f"股票列表后台更新完成，共 {len(df)} 只股票")
             except Exception as e:
-                print(f"⚠️ 后台更新失败: {e}")
+                logger.warning(f"后台更新失败: {e}")
         
         thread = threading.Thread(target=update, daemon=True)
         thread.start()
@@ -76,33 +81,33 @@ class StockListService:
                 self._last_update = current_time
                 
                 if cache_expired:
-                    print(f"📦 从本地缓存加载 {len(self._stock_list)} 只股票（缓存已过期，后台更新中...）")
+                    logger.info(f"从本地缓存加载 {len(self._stock_list)} 只股票（缓存已过期，后台更新中...）")
                     self._refresh_cache_async()  # 后台异步更新
                 else:
-                    print(f"📦 从本地缓存加载 {len(self._stock_list)} 只股票")
+                    logger.debug(f"从本地缓存加载 {len(self._stock_list)} 只股票")
                 
                 return self._stock_list
-            except Exception as e:
-                print(f"⚠️ 读取缓存文件失败: {e}")
+            except (IOError, json.JSONDecodeError) as e:
+                logger.warning(f"读取缓存文件失败: {e}")
         
         # 如果本地没有缓存，从网络获取
         try:
-            print("🌐 正在从网络获取股票列表...")
+            logger.info("正在从网络获取股票列表...")
             df = ak.stock_info_a_code_name()
             
             if 'code' in df.columns and 'name' in df.columns:
                 self._stock_list = df[['code', 'name']]
                 self._last_update = current_time
-                print(f"✅ 股票列表已更新，共 {len(df)} 只股票")
+                logger.info(f"股票列表已更新，共 {len(df)} 只股票")
                 
                 # 保存到本地缓存
                 try:
                     os.makedirs(os.path.dirname(self.CACHE_FILE), exist_ok=True)
                     with open(self.CACHE_FILE, 'w', encoding='utf-8') as f:
                         json.dump(df[['code', 'name']].to_dict('records'), f, ensure_ascii=False)
-                    print("💾 股票列表已保存到本地缓存")
-                except Exception as e:
-                    print(f"⚠️ 保存缓存失败: {e}")
+                    logger.debug("股票列表已保存到本地缓存")
+                except IOError as e:
+                    logger.warning(f"保存缓存失败: {e}")
             else:
                 if len(df.columns) >= 2:
                     df.columns = ['code', 'name'] + list(df.columns[2:])
@@ -110,9 +115,9 @@ class StockListService:
                     self._last_update = current_time
                     
         except Exception as e:
-            print(f"❌ 获取股票列表失败: {e}")
+            logger.error(f"获取股票列表失败: {e}")
             if self._stock_list is not None:
-                print("使用内存缓存的股票列表")
+                logger.info("使用内存缓存的股票列表")
             else:
                 self._stock_list = pd.DataFrame(columns=['code', 'name'])
         

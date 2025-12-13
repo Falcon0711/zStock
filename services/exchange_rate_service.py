@@ -10,7 +10,7 @@
     
     # 获取美元汇率
     rate = service.get_exchange_rate('USD')
-    print(f"美元买入价: {rate['buy_price']}")
+    logger.info(f"美元买入价: {rate['buy_price']}")
 """
 
 import re
@@ -18,6 +18,11 @@ import time
 from typing import Dict, Optional
 import requests
 from datetime import datetime
+
+from utils.logger import get_logger
+from services.data_config import REQUEST_TIMEOUT
+
+logger = get_logger(__name__)
 
 
 class BocExchangeRate:
@@ -51,14 +56,14 @@ class BocExchangeRate:
         """
         try:
             headers = self._get_headers()
-            r = self._session.get(self.url, headers=headers, timeout=10)
+            r = self._session.get(self.url, headers=headers, timeout=REQUEST_TIMEOUT)
             r.encoding = 'utf-8'
             
             # 提取所有的表格单元格数据
             data = re.findall(r"<td>(.*?)</td>", r.text)
             
             if len(data) < 15:
-                print("⚠️ 外汇数据解析失败: 数据不足")
+                logger.warning("外汇数据解析失败: 数据不足")
                 return {}
             
             # 美元数据通常在特定位置
@@ -72,7 +77,7 @@ class BocExchangeRate:
                         break
                 
                 if usd_index == -1:
-                    print("⚠️ 未找到美元数据")
+                    logger.warning("未找到美元数据")
                     return {}
                 
                 # 提取买入价和卖出价（现汇）
@@ -90,11 +95,11 @@ class BocExchangeRate:
                     "update_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
             except (ValueError, IndexError) as e:
-                print(f"⚠️ 解析美元汇率数据失败: {e}")
+                logger.warning(f"解析美元汇率数据失败: {e}")
                 return {}
         
-        except Exception as e:
-            print(f"⚠️ 获取外汇牌价失败: {e}")
+        except requests.RequestException as e:
+            logger.error(f"获取外汇牌价失败: {e}")
             return {}
     
     def get_all_rates(self) -> Dict:
@@ -158,7 +163,7 @@ class ExchangeRateService:
         if currency == "USD":
             result = self._exchange.get_usd_rate()
         else:
-            print(f"⚠️ 暂不支持货币: {currency}")
+            logger.warning(f"暂不支持货币: {currency}")
             return {}
         
         # 更新缓存

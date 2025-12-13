@@ -33,6 +33,19 @@ const IntradayChart: React.FC<IntradayChartProps> = ({ data, theme, stockInfo })
             chart.applyOptions({ width: chartContainerRef.current!.clientWidth });
         };
 
+        // 获取数据日期，用于构建时间戳
+        const dataDate = stockInfo.date || new Date().toISOString().split('T')[0];
+
+        // 时间字符串转Unix时间戳（秒）- 使用UTC时间（不加时区偏移）
+        // 这样 lightweight-charts 会直接显示这个时间
+        const timeStringToTimestamp = (timeStr: string): number => {
+            const [hours, minutes] = timeStr.split(':').map(Number);
+            const [year, month, day] = dataDate.split('-').map(Number);
+            // 直接构建UTC时间戳，这样charts会显示我们设置的时间
+            const dateObj = new Date(Date.UTC(year, month - 1, day, hours, minutes, 0));
+            return Math.floor(dateObj.getTime() / 1000);
+        };
+
         // 创建图表
         const chart = createChart(chartContainerRef.current, {
             layout: {
@@ -50,7 +63,7 @@ const IntradayChart: React.FC<IntradayChartProps> = ({ data, theme, stockInfo })
                 },
             },
             crosshair: {
-                mode: 1, // 十字线模式
+                mode: 1,
             },
             rightPriceScale: {
                 borderColor: theme.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
@@ -59,9 +72,15 @@ const IntradayChart: React.FC<IntradayChartProps> = ({ data, theme, stockInfo })
                 borderColor: theme.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
                 timeVisible: true,
                 secondsVisible: false,
-                tickMarkFormatter: (time: any) => {
-                    // 格式化时间显示
-                    return time;
+                fixLeftEdge: true,
+                fixRightEdge: true,
+            },
+            localization: {
+                timeFormatter: (timestamp: number) => {
+                    const date = new Date(timestamp * 1000);
+                    const hours = date.getUTCHours().toString().padStart(2, '0');
+                    const mins = date.getUTCMinutes().toString().padStart(2, '0');
+                    return `${hours}:${mins}`;
                 },
             },
         });
@@ -82,16 +101,35 @@ const IntradayChart: React.FC<IntradayChartProps> = ({ data, theme, stockInfo })
             lastValueVisible: false,
         });
 
-        // 格式化数据为时间戳
-        const priceData = data.map((d, i) => ({
-            time: i as any, // 使用索引作为时间
+        // 格式化数据，使用真实时间戳
+        const priceData = data.map((d) => ({
+            time: timeStringToTimestamp(d.time) as any,
             value: d.price,
         }));
 
-        const avgData = data.map((d, i) => ({
-            time: i as any,
+        const avgData = data.map((d) => ({
+            time: timeStringToTimestamp(d.time) as any,
             value: d.avg,
         }));
+
+        // 添加边界点来固定X轴范围为整个交易日
+        const boundarySeries = chart.addLineSeries({
+            color: 'transparent',
+            lineWidth: 1,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            visible: false,
+        });
+
+        // 边界时间戳：09:30 开盘 和 15:00 收盘
+        const openTime = timeStringToTimestamp('09:30');
+        const closeTime = timeStringToTimestamp('15:00');
+        const boundaryPrice = data.length > 0 ? data[0].price : stockInfo.close;
+
+        boundarySeries.setData([
+            { time: openTime as any, value: boundaryPrice },
+            { time: closeTime as any, value: boundaryPrice },
+        ]);
 
         priceSeries.setData(priceData);
         avgSeries.setData(avgData);
@@ -106,6 +144,7 @@ const IntradayChart: React.FC<IntradayChartProps> = ({ data, theme, stockInfo })
             title: '昨收',
         });
 
+        // 自适应显示完整范围
         chart.timeScale().fitContent();
 
         window.addEventListener('resize', handleResize);

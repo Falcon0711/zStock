@@ -1,1 +1,9 @@
-/* Empty for debugging */
+/* ===========================================
+   Main Entry Point
+   A股智能分析系统样式入口
+   =========================================== */
+
+/* Import Design System */
+@import './styles/variables.css';
+@import './styles/global.css';
+@import './styles/components.css';

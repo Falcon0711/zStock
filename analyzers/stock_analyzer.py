@@ -9,6 +9,7 @@ Stock Analyzer for A-Shares (Refactored)
 """
 
 import akshare as ak
+from datetime import datetime
 import pandas as pd
 import numpy as np
 import time
@@ -24,31 +25,50 @@ from analyzers.indicators import (
 )
 
 # ==================== 分析结果缓存 ====================
-# 缓存格式: {stock_code: (result_dict, timestamp)}
-_analysis_cache: Dict[str, Tuple[dict, float]] = {}
-_ANALYSIS_CACHE_TTL = 120  # 2分钟TTL
+from collections import OrderedDict
+from threading import Lock
 
 
-def _get_cached_analysis(stock_code: str) -> Optional[dict]:
-    """获取缓存的分析结果"""
-    if stock_code in _analysis_cache:
-        result, cache_time = _analysis_cache[stock_code]
-        if time.time() - cache_time < _ANALYSIS_CACHE_TTL:
-            return result
-        else:
-            del _analysis_cache[stock_code]
-    return None
-
-
-def _set_analysis_cache(stock_code: str, result: dict):
-    """缓存分析结果"""
-    _analysis_cache[stock_code] = (result, time.time())
+class AnalysisCache:
+    """线程安全的 LRU 缓存（配置化）"""
     
-    # 限制缓存大小
-    if len(_analysis_cache) > 50:
-        # 删除最旧的条目
-        oldest_key = min(_analysis_cache, key=lambda k: _analysis_cache[k][1])
-        del _analysis_cache[oldest_key]
+    def __init__(self, maxsize: int = None, ttl: int = None):
+        # 从配置读取默认值
+        try:
+            from services.data_config import ANALYSIS_CACHE_SIZE, ANALYSIS_CACHE_TTL
+            maxsize = maxsize or ANALYSIS_CACHE_SIZE
+            ttl = ttl or ANALYSIS_CACHE_TTL
+        except (ImportError, AttributeError):
+            maxsize = maxsize or 50
+            ttl = ttl or 300
+        
+        self._cache: OrderedDict = OrderedDict()
+        self._lock = Lock()
+        self._maxsize = maxsize
+        self._ttl = ttl
+    
+    def get(self, key: str) -> Optional[dict]:
+        """获取缓存，返回 None 表示未命中或已过期"""
+        with self._lock:
+            if key in self._cache:
+                result, timestamp = self._cache[key]
+                if time.time() - timestamp < self._ttl:
+                    self._cache.move_to_end(key)  # LRU: 移到末尾
+                    return result
+                del self._cache[key]  # 过期删除
+        return None
+    
+    def set(self, key: str, value: dict):
+        """设置缓存"""
+        with self._lock:
+            if key in self._cache:
+                del self._cache[key]
+            self._cache[key] = (value, time.time())
+            while len(self._cache) > self._maxsize:
+                self._cache.popitem(last=False)  # 删除最旧的
+
+
+_analysis_cache = AnalysisCache()
 
 
 class StockAnalyzer(BaseAnalyzer):
@@ -61,7 +81,12 @@ class StockAnalyzer(BaseAnalyzer):
 
     def get_data(self, symbol: str, period: str = "10y") -> pd.DataFrame:
         """获取A股数据"""
-        if period.endswith('y'):
+        if period == 'all':
+            # A股始于1990年12月19日 (上交所开业)
+            # 动态计算天数，确保覆盖全部历史
+            start = datetime(1990, 12, 19)
+            days = (datetime.now() - start).days + 365  # 加一年buffer
+        elif period.endswith('y'):
             days = int(period.replace('y', '')) * 365
         elif period.endswith('d'):
             days = int(period.replace('d', ''))
@@ -145,16 +170,16 @@ class StockAnalyzer(BaseAnalyzer):
             stock_code: 股票代码
             use_cache: 是否使用缓存（默认True）
         """
-        # 🆕 检查缓存
+        # 检查缓存
         if use_cache:
-            cached = _get_cached_analysis(stock_code)
+            cached = _analysis_cache.get(stock_code)
             if cached:
                 self.logger.info(f"✅ 使用缓存的分析结果: {stock_code}")
                 return cached
         
         try:
-            # 获取数据
-            data = self.get_data(stock_code)
+            # 获取数据 (默认获取全量)
+            data = self.get_data(stock_code, period="all")
             if data is None or len(data) == 0:
                 raise ValueError(f"无法获取股票 {stock_code} 的数据")
 
@@ -175,14 +200,15 @@ class StockAnalyzer(BaseAnalyzer):
                 'latest_price': latest['close'],
                 'kdj_k': latest.get('kdj_k', 0),
                 'kdj_d': latest.get('kdj_d', 0),
+                'kdj_j': latest.get('kdj_j', 0),
                 'bbi_value': latest.get('bbi', 0),
                 'macd_value': latest.get('macd', 0),
                 'zhixing_trend_value': latest.get('zhixing_trend', 0),
                 'zhixing_multi_value': latest.get('zhixing_multi', 0)
             }
             
-            # 🆕 缓存结果
-            _set_analysis_cache(stock_code, result)
+            # 缓存结果
+            _analysis_cache.set(stock_code, result)
             self.logger.info(f"✅ 分析完成并缓存: {stock_code}")
             
             return result
@@ -333,6 +359,7 @@ class StockAnalyzer(BaseAnalyzer):
                         'MACD信号': "买入" if analysis['signals'].get('macd_buy') else 
                                    "卖出" if analysis['signals'].get('macd_sell') else "观望",
                     })
-            except:
+            except Exception as e:
+                self.logger.warning(f"批量分析 {stock.get('code', 'unknown')} 失败: {e}")
                 continue
         return results

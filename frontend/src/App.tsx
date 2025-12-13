@@ -4,7 +4,7 @@ import Dashboard from './components/Dashboard';
 import MarketTicker from './components/MarketTicker';
 import StockGroups from './components/StockGroups';
 import SearchSuggestions from './components/SearchSuggestions';
-import { fetchStockFull, fetchIndexHistory, searchStocks } from './services/api';
+import { fetchStockFull, fetchIndexHistory, searchStocks, addUserStock } from './services/api';
 import type { AnalysisResult, ChartData, StockSuggestion } from './services/api';
 
 // 股票分组数据类型
@@ -37,6 +37,10 @@ const AppContent: React.FC = () => {
   const [suggestions, setSuggestions] = useState<StockSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
   const searchTimeoutRef = useRef<number | null>(null);
+
+  // 🆕 添加股票按钮状态
+  const [showAddMenu, setShowAddMenu] = useState<boolean>(false);
+  const [addingToGroup, setAddingToGroup] = useState<boolean>(false);
 
   // 🆕 自选股数据状态 - 提升到App层保持持久化
   const [stockGroups, setStockGroups] = useState<StockGroupsData>({
@@ -222,8 +226,8 @@ const AppContent: React.FC = () => {
           transition: 'all 0.3s ease'
         }}>
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flex: 1 }}>
-            {/* 返回按钮 - 仅在有分析结果时显示 */}
-            {analysis && (
+            {/* 返回按钮 - 仅在有分析结果或指数详情时显示 */}
+            {(analysis || (history.length > 0 && indexName)) && (
               <button
                 onClick={handleBack}
                 style={{
@@ -322,6 +326,100 @@ const AppContent: React.FC = () => {
             >
               {loading ? '分析中...' : '分析'}
             </button>
+
+            {/* 🆕 添加到分组按钮 (仅当有搜索内容时显示) */}
+            {searchInput && (
+              <div style={{ position: 'relative' }}>
+                <button
+                  onClick={() => setShowAddMenu(!showAddMenu)}
+                  style={{
+                    padding: '0.6rem 1rem',
+                    borderRadius: '20px',
+                    border: `1px solid ${theme.colors.border}`,
+                    background: theme.colors.bgTertiary,
+                    color: theme.colors.textPrimary,
+                    fontSize: '0.9rem',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem'
+                  }}
+                  title="添加到分组"
+                >
+                  <span>+</span>
+                  <span>添加</span>
+                </button>
+
+                {showAddMenu && (
+                  <>
+                    <div
+                      style={{ position: 'fixed', inset: 0, zIndex: 101 }}
+                      onClick={() => setShowAddMenu(false)}
+                    />
+                    <div style={{
+                      position: 'absolute',
+                      top: '120%',
+                      right: 0,
+                      width: '120px',
+                      background: theme.colors.bgSecondary,
+                      borderRadius: '12px',
+                      boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+                      border: `1px solid ${theme.colors.border}`,
+                      padding: '0.5rem',
+                      zIndex: 102,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.25rem'
+                    }}>
+                      {[
+                        { id: 'favorites', label: '⭐ 自选股' },
+                        { id: 'holdings', label: '💼 持有股' },
+                        { id: 'watching', label: '👀 观测股' }
+                      ].map(group => (
+                        <button
+                          key={group.id}
+                          onClick={async () => {
+                            if (addingToGroup) return;
+                            setAddingToGroup(true);
+                            try {
+                              await addUserStock(group.id, searchInput);
+                              await fetchStockGroups(true);
+                              setShowAddMenu(false);
+                              alert(`已添加到${group.label.split(' ')[1]}`);
+                            } catch (error) {
+                              console.error(error);
+                              alert('添加失败，请重试');
+                            } finally {
+                              setAddingToGroup(false);
+                            }
+                          }}
+                          style={{
+                            padding: '0.6rem 0.8rem',
+                            borderRadius: '8px',
+                            border: 'none',
+                            background: 'transparent',
+                            color: theme.colors.textPrimary,
+                            fontSize: '0.85rem',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            transition: 'all 0.2s ease'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = theme.colors.bgTertiary}
+                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        >
+                          {group.label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
@@ -366,17 +464,14 @@ const AppContent: React.FC = () => {
           {analysis ? (
             <Dashboard analysis={analysis} history={history} loading={loading} stockCode={searchInput} stockName={stockName} />
           ) : history.length > 0 && indexName ? (
-            /* 🆕 显示指数K线图 */
-            <div style={{ padding: '2rem' }}>
-              <h2 style={{
-                textAlign: 'center',
-                color: theme.colors.textPrimary,
-                marginBottom: '1rem'
-              }}>
-                {indexName} K线图
-              </h2>
-              <Dashboard analysis={null as any} history={history} loading={loading} />
-            </div>
+            /* 🆕 显示指数K线图 - 委托给 Dashboard 渲染以保持一致性 */
+            <Dashboard
+              analysis={null as any}
+              history={history}
+              loading={loading}
+              stockName={indexName} // 传入指数名称作为股票名称
+              stockCode={searchInput} // 传入指数代码
+            />
           ) : (
             <div style={{
               display: 'flex',

@@ -126,3 +126,8 @@ export const fetchIntraday = async (code: string): Promise<IntradayResponse> => 
     const response = await api.get(`/stock/${code}/intraday`);
     return response.data;
 };
+// 🆕 添加股票到分组
+export const addUserStock = async (group: string, code: string): Promise<any> => {
+    const response = await api.post('/user/stocks', { group, code });
+    return response.data;
+};

@@ -17,8 +17,11 @@ from datetime import datetime, date
 from typing import Dict, List, Optional, Union
 import pandas as pd
 
+from utils.logger import get_logger
 from .realtime_quotation_service import get_realtime_service, RealtimeQuotationService
 from .local_data_service import get_local_data_service, LocalDataService
+
+logger = get_logger(__name__)
 
 
 class RealtimeKlineService:
@@ -143,8 +146,8 @@ class RealtimeKlineService:
             for key in data:
                 if key.endswith(code):
                     return data[key]
-        except Exception as e:
-            print(f"⚠️ 获取 {code} 实时行情失败: {e}")
+        except (KeyError, TypeError, AttributeError) as e:
+            logger.warning(f"获取 {code} 实时行情失败: {e}")
         return None
     
     def _format_realtime_to_kline(self, quote: dict) -> Optional[dict]:

@@ -4,6 +4,11 @@ from typing import List, Dict, Any
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
+
+
 class SectorDataService:
     """行业板块数据服务"""
 
@@ -14,10 +19,10 @@ class SectorDataService:
             try:
                 return future.result(timeout=timeout)
             except FuturesTimeoutError:
-                print(f"Sector fetch timed out after {timeout}s")
+                logger.warning(f"Sector fetch timed out after {timeout}s")
                 return pd.DataFrame()
             except Exception as e:
-                print(f"Error in sector fetch: {e}")
+                logger.error(f"Error in sector fetch: {e}")
                 return pd.DataFrame()
 
     def get_hot_sectors(self, limit: int = 10) -> List[Dict[str, Any]]:
@@ -26,7 +31,7 @@ class SectorDataService:
         如果API失败，返回模拟数据
         """
         try:
-            print(f"Fetching hot sectors with timeout...")
+            logger.debug("Fetching hot sectors with timeout...")
             df = self._fetch_sectors_with_timeout(timeout=5)
             
             if df is not None and not df.empty and '涨跌幅' in df.columns:
@@ -43,13 +48,13 @@ class SectorDataService:
                         "top_stock_change": float(row['领涨股票-涨跌幅']) if '领涨股票-涨跌幅' in row else 0.0
                     })
                 
-                print(f"Successfully fetched {len(sectors)} hot sectors.")
+                logger.debug(f"Successfully fetched {len(sectors)} hot sectors.")
                 return sectors
         except Exception as e:
-            print(f"Error fetching hot sectors: {e}")
+            logger.error(f"Error fetching hot sectors: {e}")
         
         # 返回模拟数据作为fallback
-        print("Using mock sector data as fallback")
+        logger.info("Using mock sector data as fallback")
         return self._get_mock_sectors(limit)
     
     def _get_mock_sectors(self, limit: int = 10) -> List[Dict[str, Any]]:
@@ -96,7 +101,7 @@ class SectorDataService:
                         })
                     return sectors
             except Exception as e:
-                print(f"Error fetching hot concepts: {e}")
+                logger.error(f"Error fetching hot concepts: {e}")
                 if attempt < max_retries - 1:
                     time.sleep(1)
         return []

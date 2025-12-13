@@ -3,10 +3,6 @@
 实时行情服务模块
 支持新浪和腾讯数据源获取 A股实时行情
 
-数据源:
-- 新浪: http://hq.sinajs.cn/rn={timestamp}&list=股票代码
-- 腾讯: http://qt.gtimg.cn/q=股票代码
-
 使用示例:
     service = RealtimeQuotationService(source='sina')
     
@@ -29,307 +25,22 @@ from concurrent.futures import ThreadPoolExecutor
 import requests
 from datetime import datetime
 
+from utils.logger import get_logger
+from services.data_config import REQUEST_TIMEOUT
+
+logger = get_logger(__name__)
+
+
+from datetime import datetime
+
+from utils.stock_utils import get_stock_type  # 使用统一的工具函数
+# 使用统一的数据源模块
+from services.data_sources import SinaDataSource, TencentDataSource
+
 
 # 股票代码路径
 STOCK_CODE_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "stock_codes.json")
 
-
-def get_stock_type(stock_code: str) -> str:
-    """
-    判断股票代码对应的证券市场
-    
-    匹配规则:
-    - ['43', '83', '87', '92'] 开头为 bj (北交所)
-    - ['5', '6', '7', '9', '110', '113', '118', '132', '204'] 开头为 sh (上交所)
-    - 其余为 sz (深交所)
-    
-    Args:
-        stock_code: 股票代码，如 '600519' 或 'sh600519'
-    
-    Returns:
-        'sh', 'sz', 或 'bj'
-    """
-    assert isinstance(stock_code, str), "stock code need str type"
-    
-    # 如果已有前缀直接返回
-    if stock_code.startswith(("sh", "sz", "zz", "bj")):
-        return stock_code[:2]
-    
-    bj_head = ("43", "83", "87", "92")
-    sh_head = ("5", "6", "7", "9", "110", "113", "118", "132", "204")
-    
-    if stock_code.startswith(bj_head):
-        return "bj"
-    elif stock_code.startswith(sh_head):
-        return "sh"
-    return "sz"
-
-
-class SinaQuotation:
-    """新浪实时行情获取"""
-    
-    max_num = 800  # 每次请求最大股票数
-    
-    # 解析正则
-    grep_detail = re.compile(
-        r"(\d+)=[^\s]([^\s,]+?)%s%s"
-        % (r",([\.\d]+)" * 29, r",([-\.\d:]+)" * 2)
-    )
-    grep_detail_with_prefix = re.compile(
-        r"(\w{2}\d+)=[^\s]([^\s,]+?)%s%s"
-        % (r",([\.\d]+)" * 29, r",([-\.\d:]+)" * 2)
-    )
-    del_null_data_stock = re.compile(r"(\w{2}\d+)=\"\";")
-    
-    def __init__(self):
-        self._session = requests.Session()
-    
-    @property
-    def stock_api(self) -> str:
-        return f"http://hq.sinajs.cn/rn={int(time.time() * 1000)}&list="
-    
-    def _get_headers(self) -> dict:
-        return {
-            "Accept-Encoding": "gzip, deflate, sdch",
-            "User-Agent": (
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/54.0.2840.100 Safari/537.36"
-            ),
-            "Referer": "http://finance.sina.com.cn/"
-        }
-    
-    def _gen_stock_prefix(self, stock_codes: List[str]) -> List[str]:
-        """为股票代码添加市场前缀"""
-        return [get_stock_type(code) + code[-6:] for code in stock_codes]
-    
-    def _fetch_stocks(self, stock_list: str) -> Optional[str]:
-        """获取一批股票数据"""
-        try:
-            headers = self._get_headers()
-            r = self._session.get(self.stock_api + stock_list, headers=headers, timeout=10)
-            return r.text
-        except Exception as e:
-            print(f"⚠️ 新浪行情请求失败: {e}")
-            return None
-    
-    def get_realtime(self, stock_codes: Union[str, List[str]], prefix: bool = False) -> Dict:
-        """
-        获取实时行情
-        
-        Args:
-            stock_codes: 单个股票代码或代码列表
-            prefix: 返回结果是否带市场前缀
-        
-        Returns:
-            行情字典 {代码: {name, now, open, close, high, low, ...}}
-        """
-        if isinstance(stock_codes, str):
-            stock_codes = [stock_codes]
-        
-        # 添加市场前缀
-        stock_with_prefix = self._gen_stock_prefix(stock_codes)
-        
-        # 分批请求
-        results = []
-        for i in range(0, len(stock_with_prefix), self.max_num):
-            batch = stock_with_prefix[i:i + self.max_num]
-            stock_list = ",".join(batch)
-            data = self._fetch_stocks(stock_list)
-            if data:
-                results.append(data)
-        
-        return self._parse_response(results, prefix=prefix)
-    
-    def get_market_snapshot(self, stock_codes: List[str], prefix: bool = False) -> Dict:
-        """获取多只股票快照"""
-        return self.get_realtime(stock_codes, prefix=prefix)
-    
-    def _parse_response(self, rep_data: List[str], prefix: bool = False) -> Dict:
-        """解析响应数据"""
-        stocks_detail = "".join(rep_data)
-        stocks_detail = self.del_null_data_stock.sub('', stocks_detail)
-        stocks_detail = stocks_detail.replace(' ', '')
-        
-        grep_str = self.grep_detail_with_prefix if prefix else self.grep_detail
-        result = grep_str.finditer(stocks_detail)
-        
-        stock_dict = {}
-        for stock_match_object in result:
-            stock = stock_match_object.groups()
-            try:
-                stock_dict[stock[0]] = {
-                    "name": stock[1],
-                    "open": float(stock[2]) if stock[2] else 0,
-                    "close": float(stock[3]) if stock[3] else 0,  # 昨收
-                    "now": float(stock[4]) if stock[4] else 0,
-                    "high": float(stock[5]) if stock[5] else 0,
-                    "low": float(stock[6]) if stock[6] else 0,
-                    "buy": float(stock[7]) if stock[7] else 0,
-                    "sell": float(stock[8]) if stock[8] else 0,
-                    "turnover": int(float(stock[9])) if stock[9] else 0,  # 成交量（股）
-                    "volume": float(stock[10]) if stock[10] else 0,  # 成交额
-                    "bid1_volume": int(float(stock[11])) if stock[11] else 0,
-                    "bid1": float(stock[12]) if stock[12] else 0,
-                    "bid2_volume": int(float(stock[13])) if stock[13] else 0,
-                    "bid2": float(stock[14]) if stock[14] else 0,
-                    "bid3_volume": int(float(stock[15])) if stock[15] else 0,
-                    "bid3": float(stock[16]) if stock[16] else 0,
-                    "bid4_volume": int(float(stock[17])) if stock[17] else 0,
-                    "bid4": float(stock[18]) if stock[18] else 0,
-                    "bid5_volume": int(float(stock[19])) if stock[19] else 0,
-                    "bid5": float(stock[20]) if stock[20] else 0,
-                    "ask1_volume": int(float(stock[21])) if stock[21] else 0,
-                    "ask1": float(stock[22]) if stock[22] else 0,
-                    "ask2_volume": int(float(stock[23])) if stock[23] else 0,
-                    "ask2": float(stock[24]) if stock[24] else 0,
-                    "ask3_volume": int(float(stock[25])) if stock[25] else 0,
-                    "ask3": float(stock[26]) if stock[26] else 0,
-                    "ask4_volume": int(float(stock[27])) if stock[27] else 0,
-                    "ask4": float(stock[28]) if stock[28] else 0,
-                    "ask5_volume": int(float(stock[29])) if stock[29] else 0,
-                    "ask5": float(stock[30]) if stock[30] else 0,
-                    "date": stock[31],
-                    "time": stock[32],
-                }
-            except (ValueError, IndexError) as e:
-                print(f"⚠️ 解析股票 {stock[0]} 数据失败: {e}")
-                continue
-        
-        return stock_dict
-
-
-class TencentQuotation:
-    """腾讯实时行情获取"""
-    
-    max_num = 60  # 腾讯API每次最多60只
-    grep_stock_code = re.compile(r"(?<=_)\w+")
-    
-    def __init__(self):
-        self._session = requests.Session()
-    
-    @property
-    def stock_api(self) -> str:
-        return "http://qt.gtimg.cn/q="
-    
-    def _get_headers(self) -> dict:
-        return {
-            "Accept-Encoding": "gzip, deflate, sdch",
-            "User-Agent": (
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/54.0.2840.100 Safari/537.36"
-            ),
-        }
-    
-    def _gen_stock_prefix(self, stock_codes: List[str]) -> List[str]:
-        """为股票代码添加市场前缀"""
-        return [get_stock_type(code) + code[-6:] for code in stock_codes]
-    
-    def _fetch_stocks(self, stock_list: str) -> Optional[str]:
-        """获取一批股票数据"""
-        try:
-            headers = self._get_headers()
-            r = self._session.get(self.stock_api + stock_list, headers=headers, timeout=10)
-            return r.text
-        except Exception as e:
-            print(f"⚠️ 腾讯行情请求失败: {e}")
-            return None
-    
-    def get_realtime(self, stock_codes: Union[str, List[str]], prefix: bool = False) -> Dict:
-        """获取实时行情"""
-        if isinstance(stock_codes, str):
-            stock_codes = [stock_codes]
-        
-        stock_with_prefix = self._gen_stock_prefix(stock_codes)
-        
-        # 分批请求（使用线程池并发）
-        results = []
-        batches = []
-        for i in range(0, len(stock_with_prefix), self.max_num):
-            batch = stock_with_prefix[i:i + self.max_num]
-            batches.append(",".join(batch))
-        
-        if len(batches) > 1:
-            with ThreadPoolExecutor(max_workers=min(len(batches), 10)) as executor:
-                results = list(executor.map(self._fetch_stocks, batches))
-        else:
-            for batch in batches:
-                data = self._fetch_stocks(batch)
-                if data:
-                    results.append(data)
-        
-        results = [r for r in results if r is not None]
-        return self._parse_response(results, prefix=prefix)
-    
-    def get_market_snapshot(self, stock_codes: List[str], prefix: bool = False) -> Dict:
-        """获取多只股票快照"""
-        return self.get_realtime(stock_codes, prefix=prefix)
-    
-    def _safe_float(self, s: str) -> Optional[float]:
-        try:
-            return float(s)
-        except (ValueError, TypeError):
-            return None
-    
-    def _parse_response(self, rep_data: List[str], prefix: bool = False) -> Dict:
-        """解析响应数据"""
-        stocks_detail = "".join(rep_data)
-        stock_details = stocks_detail.split(";")
-        stock_dict = {}
-        
-        for stock_detail in stock_details:
-            stock = stock_detail.split("~")
-            if len(stock) <= 49:
-                continue
-            
-            try:
-                stock_code = (
-                    self.grep_stock_code.search(stock[0]).group()
-                    if prefix
-                    else stock[2]
-                )
-                
-                stock_dict[stock_code] = {
-                    "name": stock[1],
-                    "code": stock_code,
-                    "now": float(stock[3]) if stock[3] else 0,
-                    "close": float(stock[4]) if stock[4] else 0,  # 昨收
-                    "open": float(stock[5]) if stock[5] else 0,
-                    "volume": float(stock[6]) * 100 if stock[6] else 0,  # 成交量
-                    "bid_volume": int(float(stock[7]) * 100) if stock[7] else 0,
-                    "ask_volume": float(stock[8]) * 100 if stock[8] else 0,
-                    "bid1": float(stock[9]) if stock[9] else 0,
-                    "bid1_volume": int(float(stock[10]) * 100) if stock[10] else 0,
-                    "bid2": float(stock[11]) if stock[11] else 0,
-                    "bid2_volume": int(float(stock[12]) * 100) if stock[12] else 0,
-                    "bid3": float(stock[13]) if stock[13] else 0,
-                    "bid3_volume": int(float(stock[14]) * 100) if stock[14] else 0,
-                    "bid4": float(stock[15]) if stock[15] else 0,
-                    "bid4_volume": int(float(stock[16]) * 100) if stock[16] else 0,
-                    "bid5": float(stock[17]) if stock[17] else 0,
-                    "bid5_volume": int(float(stock[18]) * 100) if stock[18] else 0,
-                    "ask1": float(stock[19]) if stock[19] else 0,
-                    "ask1_volume": int(float(stock[20]) * 100) if stock[20] else 0,
-                    "ask2": float(stock[21]) if stock[21] else 0,
-                    "ask2_volume": int(float(stock[22]) * 100) if stock[22] else 0,
-                    "ask3": float(stock[23]) if stock[23] else 0,
-                    "ask3_volume": int(float(stock[24]) * 100) if stock[24] else 0,
-                    "ask4": float(stock[25]) if stock[25] else 0,
-                    "ask4_volume": int(float(stock[26]) * 100) if stock[26] else 0,
-                    "ask5": float(stock[27]) if stock[27] else 0,
-                    "ask5_volume": int(float(stock[28]) * 100) if stock[28] else 0,
-                    "high": float(stock[33]) if stock[33] else 0,
-                    "low": float(stock[34]) if stock[34] else 0,
-                    "turnover": self._safe_float(stock[38]),  # 换手率
-                    "pe": self._safe_float(stock[39]),
-                    "pb": float(stock[46]) if len(stock) > 46 and stock[46] else None,
-                    "date": datetime.now().strftime("%Y-%m-%d"),
-                    "time": datetime.now().strftime("%H:%M:%S"),
-                }
-            except (ValueError, IndexError, AttributeError) as e:
-                print(f"⚠️ 腾讯数据解析失败: {e}")
-                continue
-        
-        return stock_dict
 
 
 class RealtimeQuotationService:
@@ -352,10 +63,14 @@ class RealtimeQuotationService:
             source: 数据源，'sina' 或 'tencent'
         """
         self.source = source.lower()
+        
+        # 直接使用数据源类
+        from services.data_sources import SinaDataSource, TencentDataSource
+        
         if self.source == 'sina':
-            self._quotation = SinaQuotation()
+            self._quotation = SinaDataSource()
         elif self.source == 'tencent':
-            self._quotation = TencentQuotation()
+            self._quotation = TencentDataSource()
         else:
             raise ValueError(f"不支持的数据源: {source}，请使用 'sina' 或 'tencent'")
         
@@ -370,11 +85,11 @@ class RealtimeQuotationService:
                 with open(STOCK_CODE_PATH) as f:
                     data = json.load(f)
                     self._stock_codes = data.get("stock", [])
-                    print(f"✅ 加载股票代码列表: {len(self._stock_codes)} 只")
+                    logger.info(f"加载股票代码列表: {len(self._stock_codes)} 只")
             else:
-                print(f"⚠️ 股票代码文件不存在: {STOCK_CODE_PATH}")
+                logger.warning(f"股票代码文件不存在: {STOCK_CODE_PATH}")
         except Exception as e:
-            print(f"⚠️ 加载股票代码列表失败: {e}")
+            logger.warning(f"加载股票代码列表失败: {e}")
     
     def get_realtime(self, codes: Union[str, List[str]], prefix: bool = False) -> Dict:
         """
@@ -387,7 +102,9 @@ class RealtimeQuotationService:
         Returns:
             {代码: {name, now, open, close, high, low, volume, ...}}
         """
-        return self._quotation.get_realtime(codes, prefix=prefix)
+        if isinstance(codes, str):
+            codes = [codes]
+        return self._quotation.get_realtime(codes)
     
     def get_market_snapshot(self, limit: int = 100, prefix: bool = False) -> Dict:
         """
@@ -410,13 +127,13 @@ class RealtimeQuotationService:
         
         # 获取股票列表
         if not self._stock_codes:
-            print("⚠️ 股票代码列表为空")
+            logger.warning("股票代码列表为空")
             return {}
         
         codes = self._stock_codes[:limit] if limit > 0 else self._stock_codes
         
         # 获取行情
-        result = self._quotation.get_market_snapshot(codes, prefix=prefix)
+        result = self._quotation.get_realtime(codes)
         
         # 更新缓存
         self._cache[cache_key] = result
@@ -424,16 +141,53 @@ class RealtimeQuotationService:
         
         return result
     
+    def get_realtime_with_fallback(self, codes: Union[str, List[str]], prefix: bool = False) -> Dict:
+        """
+        获取实时行情（带容灾切换）
+        
+        数据源优先级: 新浪 → 腾讯 → 东方财富（配置驱动）
+        
+        Args:
+            codes: 股票代码或代码列表
+            prefix: 是否带市场前缀
+        
+        Returns:
+            {代码: {name, now, open, close, high, low, ...}}
+        """
+        from services.data_source_factory import create_realtime_executor
+        
+        # 规范化为列表
+        if isinstance(codes, str):
+            codes = [codes]
+        
+        executor = create_realtime_executor(codes)
+        result = executor.execute()
+        
+        return result if result else {}
+    
+    def _get_realtime_from_eastmoney(self, code: str) -> Optional[Dict]:
+        """
+        从东方财富获取单只股票实时行情 (委托给 EastmoneyDataSource)
+        
+        Args:
+            code: 6位股票代码
+        
+        Returns:
+            {name, now, open, close, high, low, volume, ...} 或 None
+        """
+        from services.data_sources import EastmoneyDataSource
+        eastmoney = EastmoneyDataSource()
+        return eastmoney.get_realtime(code)
+    
     def get_stock_codes(self) -> List[str]:
         """获取全市场股票代码列表"""
         return self._stock_codes.copy()
     
     def get_intraday(self, stock_code: str) -> Dict:
         """
-        获取股票当日分时走势数据
+        获取股票当日分时走势数据（带容灾）
         
-        使用新浪分时数据接口获取当日分钟级行情
-        非交易时段会返回最近交易日的分时数据
+        数据源优先级: 东方财富 → 腾讯
         
         Args:
             stock_code: 6位股票代码，如 '600519'
@@ -444,16 +198,8 @@ class RealtimeQuotationService:
                 'name': '贵州茅台',
                 'now': 1825.00,
                 'change_pct': 0.85,
-                'high': 1830.00,
-                'low': 1815.00, 
-                'open': 1820.00,
-                'close': 1815.00,
-                'volume': 12345678,
-                'date': '2025-12-08',  # 数据日期
-                'data': [
-                    {'time': '09:30', 'price': 1820.00, 'avg': 1820.00, 'volume': 1234},
-                    ...
-                ]
+                'data': [{'time': '09:30', 'price': 1820.00, 'avg': 1820.00, 'volume': 1234}, ...],
+                'date': '2025-12-09'
             }
         """
         # 获取当日基础行情
@@ -463,98 +209,182 @@ class RealtimeQuotationService:
         if not quote:
             return {'error': f'无法获取股票 {stock_code} 的行情数据'}
         
-        # 新浪分时数据接口
-        prefix = get_stock_type(stock_code)
-        sina_code = f"{prefix}{stock_code}"
+        from services.fallback import FallbackExecutor
+        from utils.logger import get_logger
+        from services.data_config import REQUEST_TIMEOUT
+        logger = get_logger(__name__)
         
+        # 使用容灾执行器获取分时数据
+        def get_from_eastmoney():
+            data, data_date, preClose = self._get_intraday_from_eastmoney(stock_code)
+            if data and len(data) > 0:
+                return {'data': data, 'date': data_date, 'preClose': preClose}
+            return None
+        
+        def get_from_tencent():
+            data, data_date = self._get_intraday_from_tencent(stock_code)
+            if data and len(data) > 0:
+                return {'data': data, 'date': data_date, 'preClose': 0}
+            return None
+        
+        executor = FallbackExecutor(
+            providers=[get_from_eastmoney, get_from_tencent],
+            names=['东方财富', '腾讯'],
+            context=f"[{stock_code}]"
+        )
+        
+        result = executor.execute()
+        
+        if result:
+            if result.get('preClose', 0) > 0:
+                quote['close'] = result['preClose']
+            return self._build_intraday_response(stock_code, quote, result['data'], result['date'])
+        
+        # 所有数据源都失败
+        return self._build_intraday_response(stock_code, quote, [], None)
+    
+    def _get_intraday_from_eastmoney(self, stock_code: str) -> tuple:
+        """从东方财富获取分时数据"""
         try:
-            # 获取分时数据 - 增加datalen到480以获取更多历史数据
-            url = f"http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol={sina_code}&scale=1&ma=no&datalen=480"
+            prefix = get_stock_type(stock_code)
+            if prefix == 'sz':
+                secid = f"0.{stock_code}"
+            elif prefix == 'sh':
+                secid = f"1.{stock_code}"
+            else:
+                secid = f"0.{stock_code}"
+            
+            url = f"https://push2his.eastmoney.com/api/qt/stock/trends2/get?secid={secid}&fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13&fields2=f51,f52,f53,f54,f55,f56,f57,f58&iscr=0&iscca=0&ndays=1"
             
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Referer": "http://finance.sina.com.cn/"
+                "Referer": "https://quote.eastmoney.com/"
             }
             
-            response = requests.get(url, headers=headers, timeout=10)
+            response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
             
             if response.status_code != 200:
-                print(f"⚠️ 分时数据请求失败: HTTP {response.status_code}")
-                return self._build_intraday_response(stock_code, quote, [], None)
+                return [], None, 0
             
-            # 解析JSON数据
-            try:
-                intraday_data = response.json()
-            except:
-                # 如果不是JSON，尝试解析为eval格式
-                import ast
-                text = response.text.strip()
-                if text.startswith('['):
-                    intraday_data = ast.literal_eval(text)
-                else:
-                    intraday_data = []
+            result = response.json()
             
-            if not isinstance(intraday_data, list) or len(intraday_data) == 0:
-                return self._build_intraday_response(stock_code, quote, [], None)
+            if result.get('rc') != 0 or not result.get('data'):
+                return [], None, 0
             
-            # 按日期分组数据，只取最近一个交易日的数据
-            date_groups = {}
-            for item in intraday_data:
-                try:
-                    day_str = item.get('day', '')
-                    if ' ' in day_str:
-                        date_part = day_str.split(' ')[0]
-                        if date_part not in date_groups:
-                            date_groups[date_part] = []
-                        date_groups[date_part].append(item)
-                except:
-                    continue
+            data = result['data']
+            trends = data.get('trends', [])
+            preClose = float(data.get('preClose', 0))
             
-            # 获取最近交易日的数据
-            if not date_groups:
-                return self._build_intraday_response(stock_code, quote, [], None)
+            if not trends:
+                return [], None, preClose
             
-            latest_date = max(date_groups.keys())
-            latest_data = date_groups[latest_date]
-            
-            # 格式化分时数据
+            # 解析分时数据
             formatted_data = []
-            total_volume = 0
-            total_amount = 0
+            data_date = None
             
-            for item in latest_data:
+            for trend in trends:
                 try:
-                    # 提取时间（只取 HH:MM）
-                    time_str = item.get('day', '')
+                    parts = trend.split(',')
+                    if len(parts) < 7:
+                        continue
+                    
+                    time_str = parts[0]
                     if ' ' in time_str:
-                        time_str = time_str.split(' ')[1][:5]
+                        date_part, time_part = time_str.split(' ')
+                        if not data_date:
+                            data_date = date_part
+                        time_str = time_part[:5]
                     
-                    price = float(item.get('close', 0))
-                    volume = int(float(item.get('volume', 0)))
-                    
-                    total_volume += volume
-                    total_amount += price * volume
-                    
-                    # 计算均价
-                    avg_price = total_amount / total_volume if total_volume > 0 else price
+                    price = float(parts[1]) if parts[1] else 0
+                    volume = int(float(parts[5])) if parts[5] else 0
+                    avg_price = float(parts[7]) if len(parts) > 7 and parts[7] else price
                     
                     formatted_data.append({
                         'time': time_str,
                         'price': price,
                         'avg': round(avg_price, 2),
-                        'volume': volume,
-                        'open': float(item.get('open', price)),
-                        'high': float(item.get('high', price)),
-                        'low': float(item.get('low', price))
+                        'volume': volume
                     })
-                except (ValueError, KeyError) as e:
+                except (ValueError, IndexError):
                     continue
             
-            return self._build_intraday_response(stock_code, quote, formatted_data, latest_date)
+            logger.debug(f"[东方财富] {stock_code} 分时数据 {len(formatted_data)} 条")
+            return formatted_data, data_date, preClose
             
         except Exception as e:
-            print(f"⚠️ 获取分时数据失败: {e}")
-            return self._build_intraday_response(stock_code, quote, [], None)
+            logger.warning(f"[东方财富] {stock_code} 分时数据失败: {e}")
+            return [], None, 0
+    
+    def _get_intraday_from_tencent(self, stock_code: str) -> tuple:
+        """从腾讯获取分时数据"""
+        try:
+            prefix = get_stock_type(stock_code)
+            tc_code = f"{prefix}{stock_code}"
+            
+            url = f"http://data.gtimg.cn/flashdata/hushen/minute/{tc_code}.js"
+            
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Referer": "https://gu.qq.com/"
+            }
+            
+            response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
+            
+            if response.status_code != 200:
+                return [], None
+            
+            # 解析腾讯分时数据格式
+            text = response.text
+            # 数据格式: min_data="日期\\nhhmm 价格 成交量\\n..."
+            
+            lines = text.split('\\n')
+            if len(lines) < 2:
+                return [], None
+            
+            data_date = lines[0].strip() if lines[0] else datetime.now().strftime('%Y%m%d')
+            # 转换日期格式
+            if len(data_date) == 8:
+                data_date = f"{data_date[:4]}-{data_date[4:6]}-{data_date[6:8]}"
+            
+            formatted_data = []
+            prices = []
+            
+            for line in lines[1:]:
+                if not line.strip():
+                    continue
+                try:
+                    parts = line.strip().split(' ')
+                    if len(parts) < 3:
+                        continue
+                    
+                    time_raw = parts[0]  # 格式: 0930
+                    if len(time_raw) == 4:
+                        time_str = f"{time_raw[:2]}:{time_raw[2:]}"
+                    else:
+                        time_str = time_raw
+                    
+                    price = float(parts[1])
+                    volume = int(parts[2])
+                    
+                    prices.append(price)
+                    avg_price = sum(prices) / len(prices)
+                    
+                    formatted_data.append({
+                        'time': time_str,
+                        'price': price,
+                        'avg': round(avg_price, 2),
+                        'volume': volume
+                    })
+                except (ValueError, IndexError):
+                    continue
+            
+            if formatted_data:
+                logger.debug(f"[腾讯] {stock_code} 分时数据 {len(formatted_data)} 条")
+            return formatted_data, data_date
+            
+        except Exception as e:
+            logger.warning(f"[腾讯] {stock_code} 分时数据失败: {e}")
+            return [], None
     
     def _build_intraday_response(self, stock_code: str, quote: Dict, data: List, data_date: Optional[str]) -> Dict:
         """构建分时数据响应"""
@@ -588,9 +418,22 @@ class RealtimeQuotationService:
 _realtime_service: Optional[RealtimeQuotationService] = None
 
 
-def get_realtime_service(source: str = 'sina') -> RealtimeQuotationService:
-    """获取实时行情服务单例"""
+def get_realtime_service(source: str = None) -> RealtimeQuotationService:
+    """
+    获取实时行情服务单例
+    
+    Args:
+        source: 数据源，默认从 REALTIME_PROVIDERS 配置取第一个
+    """
+    from services.data_config import REALTIME_PROVIDERS
+    
     global _realtime_service
+    
+    # 使用配置的第一个数据源作为默认
+    if source is None:
+        source = REALTIME_PROVIDERS[0] if REALTIME_PROVIDERS else 'sina'
+    
     if _realtime_service is None or _realtime_service.source != source:
         _realtime_service = RealtimeQuotationService(source=source)
     return _realtime_service
+

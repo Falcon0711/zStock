@@ -1,0 +1,159 @@
+/* ===========================================
+   Design System - CSS Variables
+   A股智能分析系统设计系统
+   =========================================== */
+
+:root {
+  /* ===== Color System ===== */
+  
+  /* Dark Theme Colors */
+  --color-bg-primary-dark: #000000;
+  --color-bg-secondary-dark: #1C1C1E;
+  --color-bg-tertiary-dark: #2C2C2E;
+  
+  --color-text-primary-dark: #F5F5F7;
+  --color-text-secondary-dark: #86868B;
+  --color-text-tertiary-dark: #6E6E73;
+  
+  --color-border-dark: rgba(255, 255, 255, 0.1);
+  --color-border-hover-dark: rgba(255, 255, 255, 0.2);
+  
+  /* Light Theme Colors */
+  --color-bg-primary-light: #F5F5F7;
+  --color-bg-secondary-light: #FFFFFF;
+  --color-bg-tertiary-light: #E5E5EA;
+  
+  --color-text-primary-light: #1D1D1F;
+  --color-text-secondary-light: #86868B;
+  --color-text-tertiary-light: #AEAEB2;
+  
+  --color-border-light: rgba(0, 0, 0, 0.05);
+  --color-border-hover-light: rgba(0, 0, 0, 0.1);
+  
+  /* Accent Colors (共用) */
+  --color-accent: #007AFF;
+  --color-accent-hover: #0071E3;
+  --color-accent-dark: #0A84FF;
+  --color-accent-dark-hover: #409CFF;
+  
+  /* Status Colors */
+  --color-success: #34C759;
+  --color-success-dark: #30D158;
+  --color-error: #FF3B30;
+  --color-error-dark: #FF453A;
+  --color-warning: #FF9500;
+  --color-warning-dark: #FF9F0A;
+  
+  /* Stock Colors (红涨绿跌) */
+  --color-stock-up: #FF3B30;
+  --color-stock-down: #34C759;
+  
+  /* Chart Colors */
+  --color-chart-bbi: #8B5CF6;
+  --color-chart-trend: #FF6B6B;
+  --color-chart-multi: #FFD93D;
+  --color-chart-price: #007AFF;
+  --color-chart-avg: #FFD93D;
+  
+  /* ===== Spacing System ===== */
+  --spacing-xs: 0.25rem;    /* 4px */
+  --spacing-sm: 0.5rem;     /* 8px */
+  --spacing-md: 1rem;       /* 16px */
+  --spacing-lg: 1.5rem;     /* 24px */
+  --spacing-xl: 2rem;       /* 32px */
+  --spacing-2xl: 2.5rem;    /* 40px */
+  --spacing-3xl: 3rem;      /* 48px */
+  
+  /* ===== Border Radius ===== */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-3xl: 24px;
+  --radius-full: 9999px;
+  
+  /* ===== Shadows ===== */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --shadow-card-dark: 0 4px 20px rgba(0, 0, 0, 0.2);
+  --shadow-card-light: 0 4px 20px rgba(0, 0, 0, 0.05);
+  --shadow-card-hover-dark: 0 12px 30px rgba(0, 0, 0, 0.3);
+  --shadow-card-hover-light: 0 12px 30px rgba(0, 0, 0, 0.1);
+  
+  /* ===== Typography ===== */
+  --font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --font-family-mono: "SF Mono", Monaco, Consolas, monospace;
+  
+  --font-size-xs: 0.7rem;
+  --font-size-sm: 0.8rem;
+  --font-size-base: 0.9rem;
+  --font-size-md: 1rem;
+  --font-size-lg: 1.1rem;
+  --font-size-xl: 1.2rem;
+  --font-size-2xl: 1.5rem;
+  --font-size-3xl: 2rem;
+  
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  
+  --line-height-tight: 1.2;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.6;
+  
+  --letter-spacing-tight: -0.02em;
+  --letter-spacing-normal: 0;
+  --letter-spacing-wide: 0.05em;
+  
+  /* ===== Transitions ===== */
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.2s ease;
+  --transition-slow: 0.3s ease;
+  --transition-theme: 0.3s ease;
+  
+  /* ===== Z-Index Scale ===== */
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-modal: 300;
+  --z-tooltip: 400;
+  
+  /* ===== Responsive Breakpoints ===== */
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1200px;
+}
+
+/* ===== Theme Data Attributes ===== */
+[data-theme="dark"] {
+  --color-bg-primary: var(--color-bg-primary-dark);
+  --color-bg-secondary: var(--color-bg-secondary-dark);
+  --color-bg-tertiary: var(--color-bg-tertiary-dark);
+  --color-text-primary: var(--color-text-primary-dark);
+  --color-text-secondary: var(--color-text-secondary-dark);
+  --color-text-tertiary: var(--color-text-tertiary-dark);
+  --color-border: var(--color-border-dark);
+  --color-border-hover: var(--color-border-hover-dark);
+  --color-accent-current: var(--color-accent-dark);
+  --color-accent-current-hover: var(--color-accent-dark-hover);
+  --shadow-card: var(--shadow-card-dark);
+  --shadow-card-hover: var(--shadow-card-hover-dark);
+}
+
+[data-theme="light"] {
+  --color-bg-primary: var(--color-bg-primary-light);
+  --color-bg-secondary: var(--color-bg-secondary-light);
+  --color-bg-tertiary: var(--color-bg-tertiary-light);
+  --color-text-primary: var(--color-text-primary-light);
+  --color-text-secondary: var(--color-text-secondary-light);
+  --color-text-tertiary: var(--color-text-tertiary-light);
+  --color-border: var(--color-border-light);
+  --color-border-hover: var(--color-border-hover-light);
+  --color-accent-current: var(--color-accent);
+  --color-accent-current-hover: var(--color-accent-hover);
+  --shadow-card: var(--shadow-card-light);
+  --shadow-card-hover: var(--shadow-card-hover-light);
+}

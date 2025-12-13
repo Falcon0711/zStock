@@ -1,7 +1,12 @@
 import json
 import os
 from typing import Dict, List, Any
+
+from utils.logger import get_logger
 from services.market_data_service import MarketDataService
+
+logger = get_logger(__name__)
+
 
 class UserStockService:
     """用户股票分组管理服务"""
@@ -30,8 +35,8 @@ class UserStockService:
         try:
             with open(self.data_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except Exception as e:
-            print(f"Error reading user stocks: {e}")
+        except (IOError, json.JSONDecodeError) as e:
+            logger.error(f"Error reading user stocks: {e}")
             return {"favorites": [], "holdings": [], "watching": []}
 
     def _save_data(self, data: Dict[str, List[str]]):
@@ -39,8 +44,8 @@ class UserStockService:
         try:
             with open(self.data_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            print(f"Error saving user stocks: {e}")
+        except IOError as e:
+            logger.error(f"Error saving user stocks: {e}")
 
     def get_stocks(self) -> Dict[str, List[Dict[str, Any]]]:
         """获取所有分组的股票列表（包含实时行情）"""

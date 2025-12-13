@@ -20,6 +20,11 @@ import time
 from typing import Dict, List, Union, Optional
 import requests
 
+from utils.logger import get_logger
+from services.data_config import REQUEST_TIMEOUT
+
+logger = get_logger(__name__)
+
 
 class HKQuotation:
     """港股实时行情获取"""
@@ -60,11 +65,11 @@ class HKQuotation:
         """获取一批股票数据"""
         try:
             headers = self._get_headers()
-            r = self._session.get(self.stock_api + stock_list, headers=headers, timeout=10)
+            r = self._session.get(self.stock_api + stock_list, headers=headers, timeout=REQUEST_TIMEOUT)
             r.encoding = 'utf-8'
             return r.text
         except Exception as e:
-            print(f"⚠️ 港股行情请求失败: {e}")
+            logger.warning(f"港股行情请求失败: {e}")
             return None
     
     def get_realtime(self, stock_codes: Union[str, List[str]], prefix: bool = False) -> Dict:
@@ -156,7 +161,7 @@ class HKQuotation:
                     "ma": safe_float(quotation[73]) if len(quotation) > 73 else 0,  # 均价
                 }
             except Exception as e:
-                print(f"⚠️ 解析港股数据失败: {e}")
+                logger.warning(f"解析港股数据失败: {e}")
                 continue
         
         return stock_dict

@@ -4,20 +4,56 @@
 
 ## 🌟 功能特性
 
-- **实时行情**: A股/港股实时行情，支持新浪/腾讯数据源
+- **实时行情**: A股/港股实时行情，支持新浪/腾讯/东方财富多数据源容灾
+- **分时走势**: 当日分钟级走势图，均价线
 - **港股数据**: 港股实时行情 + 历史K线（前复权）
 - **外汇牌价**: 中国银行实时外汇牌价
 - **自选股管理**: 分组管理股票，实时显示涨跌
 - **技术指标**: MA均线、KDJ、MACD、BBI、知行趋势
 - **智能信号**: 自动生成金叉/死叉交易信号
 - **K线图表**: TradingView 风格专业图表
+- **智能缓存**: SQLite 本地存储 + 内存缓存，减少接口访问
 
 ## 🛠 技术栈
 
 | 后端 | 前端 | 数据源 |
 |------|------|--------|
-| Python, FastAPI | React, TypeScript | AKShare, 新浪/腾讯财经 |
-| Pandas, NumPy | Lightweight Charts | 中国银行 |
+| Python 3.10+, FastAPI | React 18, TypeScript | AKShare, 新浪/腾讯/东方财富 |
+| Pandas, NumPy, SQLite | Lightweight Charts | 中国银行汇率 |
+
+## 📁 项目架构
+
+```
+Stock/
+├── api/                    # API 层
+│   ├── main.py             # 主入口 (95行)
+│   ├── routes/             # 模块化路由
+│   │   ├── stock.py        # 股票分析
+│   │   ├── market.py       # 市场数据
+│   │   ├── realtime.py     # 实时行情
+│   │   ├── hk.py           # 港股行情
+│   │   └── user.py         # 用户管理
+│   └── validators.py       # 验证器
+├── services/               # 服务层
+│   ├── realtime_quotation_service.py  # 实时行情 (多数据源容灾)
+│   ├── local_data_service.py          # 本地存储 + 智能获取
+│   ├── realtime_kline_service.py      # K线融合
+│   ├── hk_quotation_service.py        # 港股行情
+│   ├── data_config.py                 # 统一配置
+│   └── fallback.py                    # 容灾执行器
+├── analyzers/              # 分析器
+│   ├── stock_analyzer.py   # 股票分析引擎
+│   ├── indicators.py       # 技术指标
+│   └── data_fetcher.py     # 数据获取代理
+├── utils/                  # 工具函数
+│   ├── logger.py           # 日志
+│   ├── stock_utils.py      # 股票代码工具
+│   └── date_utils.py       # 日期时间工具
+├── frontend/               # React 前端
+├── tests/                  # 单元测试
+├── data/                   # 数据目录 (SQLite)
+└── settings.py             # 全局配置
+```
 
 ## 🚀 快速开始
 
@@ -28,7 +64,6 @@
 cd Stock
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env  # 编辑配置
 uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 
 # 前端
@@ -39,57 +74,60 @@ npm install && npm run dev
 ### Docker 部署
 
 ```bash
-# 构建并启动
 docker-compose up -d --build
-
-# 查看日志
-docker-compose logs -f
-```
-
-### 服务器部署
-
-```bash
-# 1. 克隆代码
-git clone https://github.com/your-username/Stock.git
-cd Stock
-
-# 2. 配置环境变量
-cp .env.example .env
-# 编辑 .env，设置 CORS_ORIGINS 为你的域名
-
-# 3. Docker 部署
-docker-compose up -d
-```
-
-## 📁 项目结构
-
-```
-Stock/
-├── api/              # FastAPI 后端 API
-├── analyzers/        # 数据获取和分析器
-├── services/         # 业务服务层
-├── frontend/         # React 前端
-├── docker-compose.yml
-└── requirements.txt
 ```
 
 ## 📡 API 端点
 
-### A股行情
-- `GET /api/realtime/{code}` - 单只A股实时行情
-- `POST /api/realtime/batch` - 批量A股行情
-- `GET /api/realtime/market` - 全市场快照
-- `GET /api/stock/{code}/kline-realtime` - 历史+实时K线
+### 股票分析
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| GET | `/api/stock/{code}` | 分析单只股票 |
+| GET | `/api/stock/{code}/full` | 分析 + K线历史 |
+| POST | `/api/stock/batch` | 批量分析 |
+| GET | `/api/stocks/search?q=xxx` | 搜索股票 |
+
+### 实时行情
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| GET | `/api/realtime/{code}` | 单只股票实时行情 |
+| POST | `/api/realtime/batch` | 批量行情 (最多50只) |
+| GET | `/api/realtime/market?limit=50` | 全市场快照 |
+| GET | `/api/stock/{code}/intraday` | 分时走势数据 |
+| GET | `/api/stock/{code}/kline-realtime` | 历史+实时K线 |
+
+### 市场数据
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| GET | `/api/market/ticker` | 市场指数行情 |
+| GET | `/api/market/indices` | 市场指数列表 |
+| GET | `/api/market/sectors` | 热门行业板块 |
+| GET | `/api/index/{code}/history` | 指数历史数据 |
 
 ### 港股行情
-- `GET /api/hk/realtime/{code}` - 单只港股实时行情
-- `POST /api/hk/realtime/batch` - 批量港股行情
-- `GET /api/hk/detail/{code}` - 港股详细信息
-- `GET /api/hk/kline/{code}` - 港股历史K线
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| GET | `/api/hk/realtime/{code}` | 单只港股行情 |
+| POST | `/api/hk/realtime/batch` | 批量港股 (最多30只) |
+| GET | `/api/hk/detail/{code}` | 港股详细信息 |
+| GET | `/api/hk/kline/{code}?days=90` | 港股K线 |
 
-### 外汇牌价
-- `GET /api/exchange/usd` - 美元汇率
-- `GET /api/exchange/all` - 所有汇率
+### 用户管理
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| GET | `/api/user/stocks` | 获取自选股分组 |
+| POST | `/api/user/stocks` | 添加自选股 |
+| DELETE | `/api/user/stocks` | 删除自选股 |
+| GET | `/api/exchange/usd` | 美元汇率 |
+| GET | `/api/exchange/all` | 所有汇率 |
+
+## 🔧 数据获取容灾链
+
+```
+实时行情: 新浪 → 腾讯 → 东方财富
+分时数据: 东方财富 → 腾讯
+历史K线: SQLite本地 → AkShare → Tushare
+```
 
 ## ⚙️ 环境变量
 
@@ -97,13 +135,23 @@ Stock/
 |------|------|--------|
 | `CORS_ORIGINS` | 允许的前端域名 | `http://localhost:5173` |
 | `LOG_LEVEL` | 日志级别 | `INFO` |
-| `MEMORY_CACHE_TTL` | 缓存时间(秒) | `300` |
+| `MEMORY_CACHE_TTL` | 内存缓存时间(秒) | `300` |
+| `REQUEST_TIMEOUT` | 请求超时(秒) | `15` |
+| `MAX_RETRIES` | 最大重试次数 | `3` |
+
+## 🧪 测试
+
+```bash
+pip install pytest
+pytest tests/ -v
+```
 
 ## 📝 注意事项
 
 - 股票代码为 6 位数字 (如 `000001`, `600519`)
-- 数据依赖 AKShare，请保持网络连接
-- 生产环境请使用 HTTPS
+- 港股代码为 4-5 位数字 (如 `00700`, `9988`)
+- 数据依赖网络接口，请保持网络连接
+- K线数据自动缓存到 SQLite，减少接口调用
 
 ## 📄 License
 

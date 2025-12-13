@@ -134,11 +134,12 @@ def calculate_zhixing_trend_line(close: pd.Series) -> pd.Series:
 
 
 def calculate_zhixing_multi_line(close: pd.Series, 
-                                  m1: int = 3, m2: int = 6, 
-                                  m3: int = 12, m4: int = 24) -> pd.Series:
+                                  m1: int = 14, m2: int = 28, 
+                                  m3: int = 57, m4: int = 114) -> pd.Series:
     """
     计算知行多空线
     公式: (MA(CLOSE,M1)+MA(CLOSE,M2)+MA(CLOSE,M3)+MA(CLOSE,M4))/4
+    默认参数: M1=14, M2=28, M3=57, M4=114
     """
     try:
         ma1 = close.rolling(window=m1).mean()
@@ -227,5 +228,25 @@ def calculate_all_indicators(data: pd.DataFrame) -> pd.DataFrame:
     data['oscillator'] = calculate_oscillator(
         data['close'], data['high'], data['low'], data['volume']
     )
+    
+    # ====== 买卖信号计算 ======
+    # KDJ 金叉死叉
+    kdj_diff = data['kdj_k'] - data['kdj_d']
+    kdj_golden = (kdj_diff > 0) & (kdj_diff.shift(1) <= 0)  # K从下穿过D = 金叉
+    kdj_death = (kdj_diff < 0) & (kdj_diff.shift(1) >= 0)   # K从上穿过D = 死叉
+    
+    # MACD 金叉死叉
+    macd_diff = data['macd'] - data['macd_signal']
+    macd_golden = (macd_diff > 0) & (macd_diff.shift(1) <= 0)
+    macd_death = (macd_diff < 0) & (macd_diff.shift(1) >= 0)
+    
+    # 价格突破知行趋势线
+    price_vs_trend = data['close'] - data['zhixing_trend']
+    trend_break_up = (price_vs_trend > 0) & (price_vs_trend.shift(1) <= 0)
+    trend_break_down = (price_vs_trend < 0) & (price_vs_trend.shift(1) >= 0)
+    
+    # 综合买卖信号 (任一指标触发即标记)
+    data['signal_buy'] = kdj_golden | macd_golden | trend_break_up
+    data['signal_sell'] = kdj_death | macd_death | trend_break_down
     
     return data

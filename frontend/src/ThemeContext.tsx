@@ -2,33 +2,37 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 
 export type ThemeMode = 'dark' | 'light';
 
-interface Theme {
-    mode: ThemeMode;
-    colors: {
-        // Background colors
-        bgPrimary: string;
-        bgSecondary: string;
-        bgTertiary: string;
+export interface ThemeColors {
+    // Background colors
+    bgPrimary: string;
+    bgSecondary: string;
+    bgTertiary: string;
 
-        // Text colors
-        textPrimary: string;
-        textSecondary: string;
-        textTertiary: string;
+    // Text colors
+    textPrimary: string;
+    textSecondary: string;
+    textTertiary: string;
 
-        // Accent colors
-        accent: string;
-        accentHover: string;
+    // Accent colors
+    accent: string;
+    accentHover: string;
 
-        // Status colors
-        success: string;
-        error: string;
-        warning: string;
+    // Status colors
+    success: string;
+    error: string;
+    warning: string;
 
-        // Border colors
-        border: string;
-        borderHover: string;
-    };
+    // Border colors
+    border: string;
+    borderHover: string;
 }
+
+export interface Theme {
+    mode: ThemeMode;
+    colors: ThemeColors;
+}
+
+// ThemeContextType for the context provider
 
 interface ThemeContextType {
     theme: Theme;
@@ -93,6 +97,8 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     useEffect(() => {
         localStorage.setItem('theme', mode);
+        // Set data-theme attribute for CSS variable switching
+        document.documentElement.setAttribute('data-theme', mode);
         document.body.style.backgroundColor = theme.colors.bgPrimary;
         document.body.style.color = theme.colors.textPrimary;
         document.body.style.transition = 'background-color 0.3s ease, color 0.3s ease';
