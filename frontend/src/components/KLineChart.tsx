@@ -83,6 +83,12 @@ const KLineChart = forwardRef<KLineChartHandle, KLineChartProps>(({ data, theme,
     // 保留 setDrawingStart 用于未来画线功能
     void _drawingStart; void setDrawingStart;
 
+    // 买卖信号显示状态
+    const [showSignals, setShowSignals] = useState<boolean>(() => {
+        const saved = localStorage.getItem('showSignals');
+        return saved !== null ? saved === 'true' : true;
+    });
+
     // 数据映射
     useEffect(() => {
         dataMap.current.clear();
@@ -165,7 +171,7 @@ const KLineChart = forwardRef<KLineChartHandle, KLineChartProps>(({ data, theme,
             height: 450,
             grid: {
                 vertLines: { visible: false },
-                horzLines: { color: borderColor },
+                horzLines: { visible: false },
             },
             crosshair: {
                 mode: 1,
@@ -198,7 +204,69 @@ const KLineChart = forwardRef<KLineChartHandle, KLineChartProps>(({ data, theme,
         });
         mainChartInstance.current = mainChart;
 
-        // K线系列
+        // ====== 先添加灰色区域填充（在K线之下显示）======
+        const hasTrend = data.some(d => d.zhixing_trend != null);
+        const hasMulti = data.some(d => d.zhixing_multi != null);
+
+        if (hasTrend && hasMulti) {
+            const validData = data.filter(d => d.zhixing_trend != null && d.zhixing_multi != null);
+
+            if (validData.length > 0) {
+                // 上边界区域（从较大值向下填充灰色）
+                const upperAreaSeries = mainChart.addAreaSeries({
+                    topColor: 'rgba(200, 180, 100, 0.15)',
+                    bottomColor: 'rgba(200, 180, 100, 0.15)',
+                    lineColor: 'transparent',
+                    lineWidth: 1,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                    crosshairMarkerVisible: false,
+                });
+                upperAreaSeries.setData(validData.map(d => ({
+                    time: d.time as Time,
+                    value: Math.max(d.zhixing_trend!, d.zhixing_multi!),
+                })));
+
+                // 下边界区域（从较小值向下用背景色覆盖）
+                const lowerAreaSeries = mainChart.addAreaSeries({
+                    topColor: theme.mode === 'dark' ? 'rgba(28, 28, 30, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+                    bottomColor: theme.mode === 'dark' ? 'rgba(28, 28, 30, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+                    lineColor: 'transparent',
+                    lineWidth: 1,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                    crosshairMarkerVisible: false,
+                });
+                lowerAreaSeries.setData(validData.map(d => ({
+                    time: d.time as Time,
+                    value: Math.min(d.zhixing_trend!, d.zhixing_multi!),
+                })));
+            }
+        }
+
+        // 短期趋势线
+        if (hasTrend) {
+            const trendSeries = mainChart.addLineSeries({
+                color: '#FFD700',
+                lineWidth: 2,
+                priceLineVisible: false,
+                lastValueVisible: false,
+            });
+            trendSeries.setData(data.filter(d => d.zhixing_trend != null).map(d => ({ time: d.time as Time, value: d.zhixing_trend! })));
+        }
+
+        // 多空线
+        if (hasMulti) {
+            const multiSeries = mainChart.addLineSeries({
+                color: '#888888',
+                lineWidth: 2,
+                priceLineVisible: false,
+                lastValueVisible: false,
+            });
+            multiSeries.setData(data.filter(d => d.zhixing_multi != null).map(d => ({ time: d.time as Time, value: d.zhixing_multi! })));
+        }
+
+        // ====== K线系列（在灰色区域之上显示）======
         const candlestickSeries = mainChart.addCandlestickSeries({
             upColor: '#FF3B30',
             downColor: '#34C759',
@@ -220,18 +288,20 @@ const KLineChart = forwardRef<KLineChartHandle, KLineChartProps>(({ data, theme,
         })));
 
         // 买卖信号标记
-        const markers: SeriesMarker<Time>[] = data
-            .filter(d => d.signal_buy || d.signal_sell)
-            .map(d => ({
-                time: d.time as Time,
-                position: d.signal_buy ? 'belowBar' : 'aboveBar',
-                color: d.signal_buy ? '#FF3B30' : '#34C759',
-                shape: d.signal_buy ? 'arrowUp' : 'arrowDown',
-                text: d.signal_buy ? '买' : '卖',
-            } as SeriesMarker<Time>));
+        if (showSignals) {
+            const markers: SeriesMarker<Time>[] = data
+                .filter(d => d.signal_buy || d.signal_sell)
+                .map(d => ({
+                    time: d.time as Time,
+                    position: d.signal_buy ? 'belowBar' : 'aboveBar',
+                    color: d.signal_buy ? '#FF3B30' : '#34C759',
+                    shape: d.signal_buy ? 'arrowUp' : 'arrowDown',
+                    text: d.signal_buy ? '买' : '卖',
+                } as SeriesMarker<Time>));
 
-        if (markers.length > 0) {
-            candlestickSeries.setMarkers(markers);
+            if (markers.length > 0) {
+                candlestickSeries.setMarkers(markers);
+            }
         }
 
         // BBI线
@@ -245,27 +315,6 @@ const KLineChart = forwardRef<KLineChartHandle, KLineChartProps>(({ data, theme,
             bbiSeries.setData(data.filter(d => d.bbi != null).map(d => ({ time: d.time as Time, value: d.bbi! })));
         }
 
-        // 知行趋势线
-        if (data.some(d => d.zhixing_trend != null)) {
-            const trendSeries = mainChart.addLineSeries({
-                color: '#FF6B6B',
-                lineWidth: 2,
-                priceLineVisible: false,
-                lastValueVisible: false,
-            });
-            trendSeries.setData(data.filter(d => d.zhixing_trend != null).map(d => ({ time: d.time as Time, value: d.zhixing_trend! })));
-        }
-
-        // 知行多空线
-        if (data.some(d => d.zhixing_multi != null)) {
-            const multiSeries = mainChart.addLineSeries({
-                color: '#FFD93D',
-                lineWidth: 2,
-                priceLineVisible: false,
-                lastValueVisible: false,
-            });
-            multiSeries.setData(data.filter(d => d.zhixing_multi != null).map(d => ({ time: d.time as Time, value: d.zhixing_multi! })));
-        }
 
         // ====== 在主图中添加成交量柱状图 ======
         const volumeSeries = mainChart.addHistogramSeries({
@@ -330,6 +379,88 @@ const KLineChart = forwardRef<KLineChartHandle, KLineChartProps>(({ data, theme,
             });
         }
 
+        // 存储price lines的引用
+        let highPriceLine: ReturnType<typeof candlestickSeries.createPriceLine> | null = null;
+        let lowPriceLine: ReturnType<typeof candlestickSeries.createPriceLine> | null = null;
+
+        // 更新可见区域内的最高价和最低价标记
+        const updateHighLowMarkers = () => {
+            try {
+                const logicalRange = mainChart.timeScale().getVisibleLogicalRange();
+                if (!logicalRange) return;
+
+                const fromIndex = Math.max(0, Math.floor(logicalRange.from));
+                const toIndex = Math.min(data.length - 1, Math.ceil(logicalRange.to));
+
+                if (fromIndex >= toIndex || data.length === 0) return;
+
+                const visibleSlice = data.slice(fromIndex, toIndex + 1);
+                if (!visibleSlice || visibleSlice.length === 0) return;
+
+                let highestPoint = visibleSlice[0];
+                let lowestPoint = visibleSlice[0];
+
+                if (!highestPoint || !lowestPoint) return;
+
+                visibleSlice.forEach(d => {
+                    if (d && d.high > highestPoint.high) highestPoint = d;
+                    if (d && d.low < lowestPoint.low) lowestPoint = d;
+                });
+
+                // 移除旧的price lines
+                if (highPriceLine) {
+                    candlestickSeries.removePriceLine(highPriceLine);
+                }
+                if (lowPriceLine) {
+                    candlestickSeries.removePriceLine(lowPriceLine);
+                }
+
+                // 添加最高价横线（在右侧显示价格数字）
+                highPriceLine = candlestickSeries.createPriceLine({
+                    price: highestPoint.high,
+                    color: '#FF3B30',
+                    lineWidth: 1,
+                    lineStyle: 2, // 虚线
+                    axisLabelVisible: true,
+                    title: '',
+                });
+
+                // 添加最低价横线（在右侧显示价格数字）
+                lowPriceLine = candlestickSeries.createPriceLine({
+                    price: lowestPoint.low,
+                    color: '#34C759',
+                    lineWidth: 1,
+                    lineStyle: 2, // 虚线
+                    axisLabelVisible: true,
+                    title: '',
+                });
+
+                // 买卖信号标记
+                const markers: SeriesMarker<Time>[] = [];
+                if (showSignals) {
+                    data.filter(d => d.signal_buy || d.signal_sell).forEach(d => {
+                        markers.push({
+                            time: d.time as Time,
+                            position: d.signal_buy ? 'belowBar' : 'aboveBar',
+                            color: d.signal_buy ? '#FF3B30' : '#34C759',
+                            shape: d.signal_buy ? 'arrowUp' : 'arrowDown',
+                            text: d.signal_buy ? '买' : '卖',
+                        } as SeriesMarker<Time>);
+                    });
+                }
+                candlestickSeries.setMarkers(markers);
+            } catch (e) {
+                // 忽略更新标记时的错误
+                console.debug('updateHighLowMarkers error:', e);
+            }
+        };
+
+        // 初始更新
+        updateHighLowMarkers();
+
+        // 监听时间轴变化
+        mainChart.timeScale().subscribeVisibleLogicalRangeChange(updateHighLowMarkers);
+
         // 窗口大小调整处理
         const handleResize = () => {
             if (mainChartRef.current) mainChart.applyOptions({ width: mainChartRef.current.clientWidth });
@@ -341,7 +472,7 @@ const KLineChart = forwardRef<KLineChartHandle, KLineChartProps>(({ data, theme,
             window.removeEventListener('resize', handleResize);
             mainChart.remove();
         };
-    }, [data, theme]);
+    }, [data, theme, showSignals]);
 
     const latestData = data.length > 0 ? data[data.length - 1] : null;
     const currentData = hoverData || latestData;
@@ -371,17 +502,36 @@ const KLineChart = forwardRef<KLineChartHandle, KLineChartProps>(({ data, theme,
                         <span style={{ color: '#8B5CF6' }}>BBI{currentData?.bbi != null ? `: ${currentData.bbi.toFixed(2)}` : ''}</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                        <div style={{ width: '16px', height: '3px', background: '#FF6B6B', borderRadius: '2px' }} />
-                        <span style={{ color: '#FF6B6B' }}>趋势{currentData?.zhixing_trend != null ? `: ${currentData.zhixing_trend.toFixed(2)}` : ''}</span>
+                        <div style={{ width: '16px', height: '3px', background: '#FFD700', borderRadius: '2px' }} />
+                        <span style={{ color: '#FFD700' }}>短期趋势线{currentData?.zhixing_trend != null ? `: ${currentData.zhixing_trend.toFixed(2)}` : ''}</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                        <div style={{ width: '16px', height: '3px', background: '#FFD93D', borderRadius: '2px' }} />
-                        <span style={{ color: '#FFD93D' }}>多空{currentData?.zhixing_multi != null ? `: ${currentData.zhixing_multi.toFixed(2)}` : ''}</span>
+                        <div style={{ width: '16px', height: '3px', background: '#888888', borderRadius: '2px' }} />
+                        <span style={{ color: '#888888' }}>多空线{currentData?.zhixing_multi != null ? `: ${currentData.zhixing_multi.toFixed(2)}` : ''}</span>
                     </div>
                 </div>
 
                 {/* 工具按钮 */}
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                        onClick={() => {
+                            const newValue = !showSignals;
+                            setShowSignals(newValue);
+                            localStorage.setItem('showSignals', String(newValue));
+                        }}
+                        style={{
+                            padding: '0.4rem 0.8rem',
+                            borderRadius: '8px',
+                            border: 'none',
+                            background: showSignals ? theme.colors.accent : theme.colors.bgTertiary,
+                            color: showSignals ? '#fff' : theme.colors.textPrimary,
+                            cursor: 'pointer',
+                            fontSize: '0.8rem',
+                            transition: 'all 0.2s',
+                        }}
+                    >
+                        📣 信号
+                    </button>
                     <button
                         onClick={() => setIsDrawingMode(!isDrawingMode)}
                         style={{
