@@ -428,6 +428,156 @@ class RealtimeQuotationService:
         """获取全市场股票代码列表"""
         return self._stock_codes.copy()
     
+    def get_intraday(self, stock_code: str) -> Dict:
+        """
+        获取股票当日分时走势数据
+        
+        使用新浪分时数据接口获取当日分钟级行情
+        非交易时段会返回最近交易日的分时数据
+        
+        Args:
+            stock_code: 6位股票代码，如 '600519'
+        
+        Returns:
+            {
+                'code': '600519',
+                'name': '贵州茅台',
+                'now': 1825.00,
+                'change_pct': 0.85,
+                'high': 1830.00,
+                'low': 1815.00, 
+                'open': 1820.00,
+                'close': 1815.00,
+                'volume': 12345678,
+                'date': '2025-12-08',  # 数据日期
+                'data': [
+                    {'time': '09:30', 'price': 1820.00, 'avg': 1820.00, 'volume': 1234},
+                    ...
+                ]
+            }
+        """
+        # 获取当日基础行情
+        quote_data = self.get_realtime(stock_code)
+        quote = quote_data.get(stock_code, {})
+        
+        if not quote:
+            return {'error': f'无法获取股票 {stock_code} 的行情数据'}
+        
+        # 新浪分时数据接口
+        prefix = get_stock_type(stock_code)
+        sina_code = f"{prefix}{stock_code}"
+        
+        try:
+            # 获取分时数据 - 增加datalen到480以获取更多历史数据
+            url = f"http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol={sina_code}&scale=1&ma=no&datalen=480"
+            
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Referer": "http://finance.sina.com.cn/"
+            }
+            
+            response = requests.get(url, headers=headers, timeout=10)
+            
+            if response.status_code != 200:
+                print(f"⚠️ 分时数据请求失败: HTTP {response.status_code}")
+                return self._build_intraday_response(stock_code, quote, [], None)
+            
+            # 解析JSON数据
+            try:
+                intraday_data = response.json()
+            except:
+                # 如果不是JSON，尝试解析为eval格式
+                import ast
+                text = response.text.strip()
+                if text.startswith('['):
+                    intraday_data = ast.literal_eval(text)
+                else:
+                    intraday_data = []
+            
+            if not isinstance(intraday_data, list) or len(intraday_data) == 0:
+                return self._build_intraday_response(stock_code, quote, [], None)
+            
+            # 按日期分组数据，只取最近一个交易日的数据
+            date_groups = {}
+            for item in intraday_data:
+                try:
+                    day_str = item.get('day', '')
+                    if ' ' in day_str:
+                        date_part = day_str.split(' ')[0]
+                        if date_part not in date_groups:
+                            date_groups[date_part] = []
+                        date_groups[date_part].append(item)
+                except:
+                    continue
+            
+            # 获取最近交易日的数据
+            if not date_groups:
+                return self._build_intraday_response(stock_code, quote, [], None)
+            
+            latest_date = max(date_groups.keys())
+            latest_data = date_groups[latest_date]
+            
+            # 格式化分时数据
+            formatted_data = []
+            total_volume = 0
+            total_amount = 0
+            
+            for item in latest_data:
+                try:
+                    # 提取时间（只取 HH:MM）
+                    time_str = item.get('day', '')
+                    if ' ' in time_str:
+                        time_str = time_str.split(' ')[1][:5]
+                    
+                    price = float(item.get('close', 0))
+                    volume = int(float(item.get('volume', 0)))
+                    
+                    total_volume += volume
+                    total_amount += price * volume
+                    
+                    # 计算均价
+                    avg_price = total_amount / total_volume if total_volume > 0 else price
+                    
+                    formatted_data.append({
+                        'time': time_str,
+                        'price': price,
+                        'avg': round(avg_price, 2),
+                        'volume': volume,
+                        'open': float(item.get('open', price)),
+                        'high': float(item.get('high', price)),
+                        'low': float(item.get('low', price))
+                    })
+                except (ValueError, KeyError) as e:
+                    continue
+            
+            return self._build_intraday_response(stock_code, quote, formatted_data, latest_date)
+            
+        except Exception as e:
+            print(f"⚠️ 获取分时数据失败: {e}")
+            return self._build_intraday_response(stock_code, quote, [], None)
+    
+    def _build_intraday_response(self, stock_code: str, quote: Dict, data: List, data_date: Optional[str]) -> Dict:
+        """构建分时数据响应"""
+        now = float(quote.get('now', 0))
+        close = float(quote.get('close', now))
+        change_pct = round((now - close) / close * 100, 2) if close > 0 else 0
+        
+        return {
+            'code': stock_code,
+            'name': quote.get('name', ''),
+            'now': now,
+            'open': float(quote.get('open', 0)),
+            'close': close,
+            'high': float(quote.get('high', 0)),
+            'low': float(quote.get('low', 0)),
+            'change_pct': change_pct,
+            'volume': int(quote.get('turnover', 0)),
+            'turnover': float(quote.get('volume', 0)),
+            'data': data,
+            'date': data_date or datetime.now().strftime('%Y-%m-%d'),  # 数据日期
+            'update_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+    
     @property
     def stock_count(self) -> int:
         """获取股票数量"""

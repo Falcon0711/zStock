@@ -8,7 +8,7 @@ interface Suggestion {
 
 interface SearchSuggestionsProps {
     suggestions: Suggestion[];
-    onSelect: (code: string) => void;
+    onSelect: (suggestion: Suggestion) => void;
     visible: boolean;
     searchQuery: string;
 }
@@ -70,7 +70,7 @@ const SearchSuggestions: React.FC<SearchSuggestionsProps> = ({
             {suggestions.map((item, index) => (
                 <div
                     key={item.code}
-                    onClick={() => onSelect(item.code)}
+                    onClick={() => onSelect(item)}
                     style={{
                         padding: '0.85rem 1rem',
                         cursor: 'pointer',

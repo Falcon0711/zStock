@@ -80,12 +80,14 @@ def get_realtime_data(stock_code: str) -> Optional[pd.DataFrame]:
 
 def get_stock_data(stock_code: str, days: int = 90, start_date: str = None) -> pd.DataFrame:
     """
-    获取股票数据（带本地缓存 + 实时数据优化）
+    获取股票数据（带本地缓存 + 实时数据优化 + 自动更新过期数据）
     
     优先级：
     1. 内存缓存（5分钟TTL）
     2. 本地SQLite数据库（历史数据）
     3. AkShare网络接口（兜底）
+    
+    新增：如果本地数据过期（落后于最近交易日），自动从网络获取最新数据并合并
     
     Args:
         stock_code: 股票代码
@@ -118,16 +120,43 @@ def get_stock_data(stock_code: str, days: int = 90, start_date: str = None) -> p
             if local_data is not None and len(local_data) >= MIN_DATA_DAYS:
                 logger.info(f"本地数据命中: {stock_code} ({len(local_data)}天)")
                 
+                # 🆕 检查本地数据是否过期（与最近交易日比较）
+                last_date = local_data['date'].max()
+                last_trading_date = _get_last_trading_date()
+                
+                if last_date.date() < last_trading_date:
+                    # 本地数据过期，从网络获取增量更新
+                    logger.info(f"本地数据过期: {stock_code} 最新={last_date.date()}, 最近交易日={last_trading_date}")
+                    try:
+                        # 从本地最新日期后一天开始获取增量数据
+                        incremental_start = (last_date + timedelta(days=1)).strftime('%Y%m%d')
+                        incremental_data = _fetch_incremental_data(stock_code, incremental_start)
+                        
+                        if incremental_data is not None and len(incremental_data) > 0:
+                            # 合并增量数据
+                            local_data = pd.concat([local_data, incremental_data], ignore_index=True)
+                            local_data = local_data.drop_duplicates(subset=['date']).sort_values('date').reset_index(drop=True)
+                            
+                            # 保存增量数据到本地数据库
+                            saved_count = local_service.save_stock_data(stock_code, incremental_data)
+                            logger.info(f"增量更新成功: {stock_code} 新增 {saved_count} 条记录")
+                    except Exception as e:
+                        logger.warning(f"增量更新失败: {stock_code} - {e}")
+                
                 # 交易时段：拼接今日实时数据
                 if is_trading_time():
                     today_str = datetime.now().strftime('%Y-%m-%d')
-                    last_date = local_data['date'].max().strftime('%Y-%m-%d')
+                    last_date_str = local_data['date'].max().strftime('%Y-%m-%d')
                     
-                    if last_date < today_str:
+                    if last_date_str < today_str:
                         realtime = get_realtime_data(stock_code)
                         if realtime is not None:
                             local_data = pd.concat([local_data, realtime], ignore_index=True)
                             logger.info(f"已拼接实时数据: {stock_code}")
+                
+                # 限制返回天数
+                if days and len(local_data) > days:
+                    local_data = local_data.tail(days).reset_index(drop=True)
                 
                 _stock_data_cache[cache_key] = (local_data.copy(), current_time)
                 return local_data
@@ -138,6 +167,62 @@ def get_stock_data(stock_code: str, days: int = 90, start_date: str = None) -> p
     # ===== 3. 从网络API获取 =====
     logger.info(f"从API获取数据: {stock_code}")
     return _fetch_from_network(stock_code, days, start_date, cache_key, current_time)
+
+
+def _get_last_trading_date() -> datetime.date:
+    """获取最近的交易日期（考虑周末和节假日）"""
+    now = datetime.now()
+    # 如果是周末，回退到周五
+    while now.weekday() >= 5:  # 5=周六, 6=周日
+        now -= timedelta(days=1)
+    # 如果当天还没收盘（15:30之前），使用前一个交易日
+    if now.time() < datetime.strptime("15:30", "%H:%M").time():
+        now -= timedelta(days=1)
+        while now.weekday() >= 5:
+            now -= timedelta(days=1)
+    return now.date()
+
+
+def _fetch_incremental_data(stock_code: str, start_date: str) -> Optional[pd.DataFrame]:
+    """获取增量数据（从指定日期到今天）"""
+    try:
+        end_date = datetime.now().strftime('%Y%m%d')
+        data = ak.stock_zh_a_hist(
+            symbol=stock_code,
+            period="daily",
+            start_date=start_date,
+            end_date=end_date,
+            adjust="qfq"
+        )
+        
+        if data is not None and not data.empty:
+            # 清洗数据
+            column_mapping = {
+                '日期': 'date',
+                '开盘': 'open',
+                '最高': 'high',
+                '最低': 'low',
+                '收盘': 'close',
+                '成交量': 'volume'
+            }
+            for old_col, new_col in column_mapping.items():
+                if old_col in data.columns:
+                    data = data.rename(columns={old_col: new_col})
+            
+            required_cols = ['date', 'open', 'high', 'low', 'close', 'volume']
+            if all(col in data.columns for col in required_cols):
+                data = data[required_cols]
+                data['date'] = pd.to_datetime(data['date'])
+                for col in ['open', 'high', 'low', 'close', 'volume']:
+                    data[col] = pd.to_numeric(data[col], errors='coerce')
+                return data.dropna()
+        
+        return None
+    except Exception as e:
+        logger.warning(f"获取增量数据失败: {stock_code} - {e}")
+        return None
+
+
 
 
 def _fetch_from_network(stock_code: str, days: int, start_date: str, 

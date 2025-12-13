@@ -31,6 +31,7 @@ const AppContent: React.FC = () => {
   const [history, setHistory] = useState<ChartData[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [indexName, setIndexName] = useState<string>(''); // 🆕 用于显示指数名称
+  const [stockName, setStockName] = useState<string>(''); // 🆕 用于显示股票名称
 
   // 搜索建议状态
   const [suggestions, setSuggestions] = useState<StockSuggestion[]>([]);
@@ -79,7 +80,7 @@ const AppContent: React.FC = () => {
 
 
 
-  const handleAnalyze = async (code: string) => {
+  const handleAnalyze = async (code: string, name?: string) => {
     if (!code || code.length !== 6) {
       alert('请输入正确的6位股票代码');
       return;
@@ -87,6 +88,29 @@ const AppContent: React.FC = () => {
 
     setLoading(true);
     setSearchInput(code);
+
+    // 🆕 尝试从 suggestions 或参数中获取股票名称
+    if (name) {
+      setStockName(name);
+    } else {
+      // 尝试从当前 suggestions 中查找
+      const found = suggestions.find(s => s.code === code);
+      if (found) {
+        setStockName(found.name);
+      } else {
+        // 如果找不到，尝试通过搜索 API 获取
+        try {
+          const results = await searchStocks(code, 1);
+          if (results.length > 0 && results[0].code === code) {
+            setStockName(results[0].name);
+          } else {
+            setStockName(''); // 找不到则清空
+          }
+        } catch {
+          setStockName('');
+        }
+      }
+    }
 
     try {
       // 🆕 使用合并端点，一次请求获取分析和历史数据
@@ -125,6 +149,7 @@ const AppContent: React.FC = () => {
     setHistory([]);
     setSearchInput('');
     setIndexName(''); // 🆕 清除指数名称
+    setStockName(''); // 🆕 清除股票名称
     setSuggestions([]);
     setShowSuggestions(false);
   };
@@ -160,11 +185,12 @@ const AppContent: React.FC = () => {
   };
 
   // 处理选择建议
-  const handleSelectSuggestion = (code: string) => {
-    setSearchInput(code);
+  const handleSelectSuggestion = (suggestion: StockSuggestion) => {
+    setSearchInput(suggestion.code);
+    setStockName(suggestion.name); // 🆕 保存股票名称
     setShowSuggestions(false);
     setSuggestions([]);
-    handleAnalyze(code);
+    handleAnalyze(suggestion.code, suggestion.name);
   };
 
 
@@ -338,7 +364,7 @@ const AppContent: React.FC = () => {
         {/* Content */}
         <div style={{ overflow: 'initial' }}>
           {analysis ? (
-            <Dashboard analysis={analysis} history={history} loading={loading} />
+            <Dashboard analysis={analysis} history={history} loading={loading} stockCode={searchInput} stockName={stockName} />
           ) : history.length > 0 && indexName ? (
             /* 🆕 显示指数K线图 */
             <div style={{ padding: '2rem' }}>

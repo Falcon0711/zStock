@@ -1,15 +1,48 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTheme } from '../ThemeContext';
 import KLineChart from './KLineChart';
+import IntradayChart from './IntradayChart';
+import { fetchIntraday } from '../services/api';
+import type { IntradayResponse } from '../services/api';
 
 interface DashboardProps {
     analysis: any;
     history: any[];
     loading: boolean;
+    stockCode?: string;  // 🆕 股票代码
+    stockName?: string;  // 🆕 股票名称
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ analysis, history, loading }) => {
+const Dashboard: React.FC<DashboardProps> = ({ analysis, history, loading, stockCode, stockName }) => {
     const { theme } = useTheme();
+
+    // 🆕 图表视图状态
+    const [chartView, setChartView] = useState<'kline' | 'intraday'>('kline');
+    const [intradayData, setIntradayData] = useState<IntradayResponse | null>(null);
+    const [intradayLoading, setIntradayLoading] = useState(false);
+
+    // 🆕 当切换到分时图时加载数据
+    useEffect(() => {
+        if (chartView === 'intraday' && stockCode && !intradayData) {
+            setIntradayLoading(true);
+            fetchIntraday(stockCode)
+                .then(data => {
+                    setIntradayData(data);
+                })
+                .catch(err => {
+                    console.error('获取分时数据失败:', err);
+                })
+                .finally(() => {
+                    setIntradayLoading(false);
+                });
+        }
+    }, [chartView, stockCode, intradayData]);
+
+    // 🆕 当股票代码变化时重置分时数据
+    useEffect(() => {
+        setIntradayData(null);
+        setChartView('kline');
+    }, [stockCode]);
 
     if (loading) {
         return (
@@ -77,6 +110,32 @@ const Dashboard: React.FC<DashboardProps> = ({ analysis, history, loading }) => 
 
     if (!analysis) return null;
 
+    // 🆕 切换按钮样式
+    const TabButton: React.FC<{
+        active: boolean;
+        onClick: () => void;
+        children: React.ReactNode;
+    }> = ({ active, onClick, children }) => (
+        <button
+            onClick={onClick}
+            style={{
+                padding: '0.5rem 1rem',
+                borderRadius: '8px',
+                border: 'none',
+                background: active
+                    ? (theme.mode === 'dark' ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.1)')
+                    : 'transparent',
+                color: active ? '#007AFF' : theme.colors.textSecondary,
+                fontSize: '0.9rem',
+                fontWeight: active ? 600 : 400,
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+            }}
+        >
+            {children}
+        </button>
+    );
+
     return (
         <div style={{
             padding: '2.5rem',
@@ -97,7 +156,7 @@ const Dashboard: React.FC<DashboardProps> = ({ analysis, history, loading }) => 
                     margin: 0,
                     letterSpacing: '-0.02em'
                 }}>
-                    分析报告
+                    {stockName && stockCode ? `${stockName}(${stockCode})` : '分析报告'}
                 </h2>
             </div>
 
@@ -138,67 +197,8 @@ const Dashboard: React.FC<DashboardProps> = ({ analysis, history, loading }) => 
                 />
             </div>
 
-            {/* Signals */}
-            {analysis.signals && Object.keys(analysis.signals).length > 0 && (
-                <div style={{
-                    background: theme.colors.bgSecondary,
-                    borderRadius: '24px',
-                    padding: '2rem',
-                    marginBottom: '2.5rem',
-                    boxShadow: theme.mode === 'dark'
-                        ? '0 4px 20px rgba(0,0,0,0.2)'
-                        : '0 4px 20px rgba(0,0,0,0.05)',
-                    transition: 'all 0.3s ease'
-                }}>
-                    <h3 style={{
-                        color: theme.colors.textPrimary,
-                        fontSize: '1.2rem',
-                        fontWeight: 600,
-                        marginTop: 0,
-                        marginBottom: '1.5rem',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.5rem',
-                        letterSpacing: '-0.01em'
-                    }}>
-                        🚦 交易信号
-                    </h3>
-                    <div style={{
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        gap: '1rem'
-                    }}>
-                        {Object.entries(analysis.signals)
-                            .filter(([_, value]) => value)
-                            .map(([key, _]) => (
-                                <div
-                                    key={key}
-                                    style={{
-                                        padding: '0.75rem 1.25rem',
-                                        borderRadius: '16px',
-                                        background: key.includes('buy')
-                                            ? `${theme.colors.success}15`
-                                            : `${theme.colors.error}15`,
-                                        color: key.includes('buy') ? theme.colors.success : theme.colors.error,
-                                        fontSize: '0.95rem',
-                                        fontWeight: 600,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '0.5rem',
-                                        transition: 'all 0.2s ease',
-                                        border: 'none'
-                                    }}
-                                >
-                                    <span>{key.includes('buy') ? '🟢' : '🔴'}</span>
-                                    {formatSignalName(key)}
-                                </div>
-                            ))
-                        }
-                    </div>
-                </div>
-            )}
 
-            {/* K线图表 */}
+            {/* 🆕 K线图表 / 分时图表 (带切换) */}
             {history && history.length > 0 && (
                 <div style={{
                     background: theme.colors.bgSecondary,
@@ -209,20 +209,142 @@ const Dashboard: React.FC<DashboardProps> = ({ analysis, history, loading }) => 
                         : '0 4px 20px rgba(0,0,0,0.05)',
                     transition: 'all 0.3s ease'
                 }}>
-                    <h3 style={{
-                        color: theme.colors.textPrimary,
-                        fontSize: '1.2rem',
-                        fontWeight: 600,
-                        marginTop: 0,
-                        marginBottom: '1.5rem',
+                    {/* 🆕 标题栏带切换按钮 */}
+                    <div style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '0.5rem',
-                        letterSpacing: '-0.01em'
+                        justifyContent: 'space-between',
+                        marginBottom: '1.5rem',
+                        flexWrap: 'wrap',
+                        gap: '1rem'
                     }}>
-                        📈 K线走势
-                    </h3>
-                    <KLineChart data={history} theme={theme} />
+                        {/* 左侧：标题 + 交易信号 */}
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '1.5rem',
+                            flexWrap: 'wrap'
+                        }}>
+                            <h3 style={{
+                                color: theme.colors.textPrimary,
+                                fontSize: '1.2rem',
+                                fontWeight: 600,
+                                margin: 0,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                                letterSpacing: '-0.01em'
+                            }}>
+                                📈 {chartView === 'kline' ? 'K线走势' : '当日走势'}
+                            </h3>
+
+                            {/* 🆕 交易信号标签 */}
+                            {analysis.signals && Object.keys(analysis.signals).some(key => analysis.signals[key]) && (
+                                <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    padding: '0.4rem 0.75rem',
+                                    background: theme.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                                    borderRadius: '8px'
+                                }}>
+                                    <span style={{
+                                        fontSize: '0.8rem',
+                                        color: theme.colors.textSecondary,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.25rem'
+                                    }}>
+                                        🚦 交易信号
+                                    </span>
+                                    {Object.entries(analysis.signals)
+                                        .filter(([_, value]) => value)
+                                        .map(([key, _]) => (
+                                            <span
+                                                key={key}
+                                                style={{
+                                                    padding: '0.25rem 0.6rem',
+                                                    borderRadius: '6px',
+                                                    background: key.includes('buy')
+                                                        ? `${theme.colors.success}20`
+                                                        : `${theme.colors.error}20`,
+                                                    color: key.includes('buy') ? theme.colors.success : theme.colors.error,
+                                                    fontSize: '0.75rem',
+                                                    fontWeight: 600,
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: '0.25rem'
+                                                }}
+                                            >
+                                                <span>{key.includes('buy') ? '🟢' : '🔴'}</span>
+                                                {formatSignalName(key)}
+                                            </span>
+                                        ))
+                                    }
+                                </div>
+                            )}
+                        </div>
+
+                        {/* 右侧：切换按钮组 */}
+                        <div style={{
+                            display: 'flex',
+                            gap: '0.25rem',
+                            background: theme.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                            padding: '0.25rem',
+                            borderRadius: '10px'
+                        }}>
+                            <TabButton
+                                active={chartView === 'kline'}
+                                onClick={() => setChartView('kline')}
+                            >
+                                K线走势
+                            </TabButton>
+                            <TabButton
+                                active={chartView === 'intraday'}
+                                onClick={() => setChartView('intraday')}
+                            >
+                                当日走势
+                            </TabButton>
+                        </div>
+                    </div>
+
+                    {/* 🆕 根据状态显示不同图表 */}
+                    {chartView === 'kline' ? (
+                        <KLineChart data={history} theme={theme} />
+                    ) : intradayLoading ? (
+                        <div style={{
+                            padding: '4rem',
+                            textAlign: 'center',
+                            color: theme.colors.textSecondary
+                        }}>
+                            <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>⏳</div>
+                            <div>加载分时数据中...</div>
+                        </div>
+                    ) : intradayData ? (
+                        <IntradayChart
+                            data={intradayData.data}
+                            theme={theme}
+                            stockInfo={{
+                                name: intradayData.name,
+                                now: intradayData.now,
+                                open: intradayData.open,
+                                close: intradayData.close,
+                                high: intradayData.high,
+                                low: intradayData.low,
+                                change_pct: intradayData.change_pct,
+                                date: intradayData.date
+                            }}
+                        />
+                    ) : (
+                        <div style={{
+                            padding: '4rem',
+                            textAlign: 'center',
+                            color: theme.colors.textTertiary
+                        }}>
+                            <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>📈</div>
+                            <div>暂无分时数据</div>
+                        </div>
+                    )}
                 </div>
             )}
 

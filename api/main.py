@@ -147,11 +147,11 @@ def get_stock_full(code: str = Depends(validate_stock_code)):
                 "low": float(row['low']),
                 "close": float(row['close']),
                 "volume": int(row['volume']) if 'volume' in row else 0,
-                "ma5": float(row['ma5']) if pd.notna(row.get('ma5')) else None,
-                "ma10": float(row['ma10']) if pd.notna(row.get('ma10')) else None,
-                "ma20": float(row['ma20']) if pd.notna(row.get('ma20')) else None,
-                "ma30": float(row['ma30']) if pd.notna(row.get('ma30')) else None,
-                "ma60": float(row['ma60']) if pd.notna(row.get('ma60')) else None
+                # 自定义指标
+                "bbi": float(row['bbi']) if pd.notna(row.get('bbi')) else None,
+                "zhixing_trend": float(row['zhixing_trend']) if pd.notna(row.get('zhixing_trend')) else None,
+                "zhixing_multi": float(row['zhixing_multi']) if pd.notna(row.get('zhixing_multi')) else None,
+                "kdj_j": float(row['kdj_j']) if pd.notna(row.get('kdj_j')) else None,
             })
         
         return {
@@ -710,6 +710,42 @@ async def get_kline_with_realtime(code: str, days: int = 90):
     except Exception as e:
         logger.error(f"获取 {code} 实时K线失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"获取实时K线失败: {e}")
+
+
+# ============================================
+# 分时走势 API 端点
+# ============================================
+
+@app.get("/api/stock/{code}/intraday")
+async def get_stock_intraday(code: str):
+    """
+    获取股票当日分时走势数据
+    
+    Args:
+        code: 6位股票代码，如 '600519'
+    
+    Returns:
+        当日分时走势数据（分钟级别）
+    """
+    try:
+        # 验证股票代码格式
+        if not code or len(code) != 6 or not code.isdigit():
+            raise HTTPException(
+                status_code=400,
+                detail=f"股票代码格式错误: {code}。请输入6位数字代码"
+            )
+        
+        data = realtime_service.get_intraday(code)
+        
+        if 'error' in data:
+            raise HTTPException(status_code=404, detail=data['error'])
+        
+        return data
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取 {code} 分时数据失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"获取分时数据失败: {e}")
 
 
 # ============================================

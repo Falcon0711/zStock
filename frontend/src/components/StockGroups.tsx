@@ -164,8 +164,8 @@ const StockGroups: React.FC<StockGroupsProps> = ({ onSelectStock, groups, loadin
                             suggestions={suggestions}
                             visible={showSuggestions}
                             searchQuery={inputCode}
-                            onSelect={(code) => {
-                                setInputCode(code);
+                            onSelect={(suggestion) => {
+                                setInputCode(suggestion.code);
                                 setShowSuggestions(false);
                                 // 可选：自动提交
                                 // handleAddStock(); 

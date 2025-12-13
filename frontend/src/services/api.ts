@@ -97,3 +97,32 @@ export const searchStocks = async (query: string, limit: number = 10): Promise<S
     const response = await api.get(`/stocks/search?q=${encodeURIComponent(query)}&limit=${limit}`);
     return response.data;
 };
+
+// 🆕 分时数据接口
+export interface IntradayData {
+    time: string;
+    price: number;
+    avg: number;
+    volume: number;
+}
+
+export interface IntradayResponse {
+    code: string;
+    name: string;
+    now: number;
+    open: number;
+    close: number;
+    high: number;
+    low: number;
+    change_pct: number;
+    volume: number;
+    data: IntradayData[];
+    date: string;  // 🆕 数据日期
+    update_time: string;
+}
+
+// 🆕 获取股票当日分时数据
+export const fetchIntraday = async (code: string): Promise<IntradayResponse> => {
+    const response = await api.get(`/stock/${code}/intraday`);
+    return response.data;
+};
