@@ -8,26 +8,56 @@ export default {
     theme: {
         extend: {
             colors: {
-                // 自定义配色 - 参考 AlphaSight AI
-                primary: {
-                    50: '#eef2ff',
-                    100: '#e0e7ff',
-                    200: '#c7d2fe',
-                    300: '#a5b4fc',
-                    400: '#818cf8',
-                    500: '#6366f1',
-                    600: '#4f46e5',
-                    700: '#4338ca',
-                    800: '#3730a3',
-                    900: '#312e81',
+                // 引用 CSS 变量，实现主题统一
+                bg: {
+                    primary: 'var(--color-bg-primary)',
+                    secondary: 'var(--color-bg-secondary)',
+                    tertiary: 'var(--color-bg-tertiary)',
                 },
-                // A股涨跌配色
-                up: '#ef4444',      // 红色涨
-                down: '#10b981',    // 绿色跌
+                text: {
+                    primary: 'var(--color-text-primary)',
+                    secondary: 'var(--color-text-secondary)',
+                    tertiary: 'var(--color-text-tertiary)',
+                },
+                border: {
+                    DEFAULT: 'var(--color-border)',
+                    hover: 'var(--color-border-hover)',
+                },
+                accent: {
+                    DEFAULT: 'var(--color-accent-current)',
+                    hover: 'var(--color-accent-current-hover)',
+                },
+                // 股票颜色（红涨绿跌）
+                up: 'var(--color-stock-up)',
+                down: 'var(--color-stock-down)',
+                // 图表颜色
+                chart: {
+                    bbi: 'var(--color-chart-bbi)',
+                    trend: 'var(--color-chart-trend)',
+                    multi: 'var(--color-chart-multi)',
+                },
             },
             fontFamily: {
-                sans: ['Inter', 'Noto Sans SC', 'system-ui', 'sans-serif'],
+                sans: ['Inter', 'Noto Sans SC', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'sans-serif'],
                 mono: ['SF Mono', 'Menlo', 'monospace'],
+            },
+            spacing: {
+                // 引用 CSS 变量
+                'xs': 'var(--spacing-xs)',
+                'sm': 'var(--spacing-sm)',
+                'md': 'var(--spacing-md)',
+                'lg': 'var(--spacing-lg)',
+                'xl': 'var(--spacing-xl)',
+            },
+            borderRadius: {
+                'sm': 'var(--radius-sm)',
+                'md': 'var(--radius-md)',
+                'lg': 'var(--radius-lg)',
+                'xl': 'var(--radius-xl)',
+            },
+            boxShadow: {
+                'card': 'var(--shadow-card)',
+                'card-hover': 'var(--shadow-card-hover)',
             },
             animation: {
                 'fade-in': 'fadeIn 0.5s ease-out forwards',
@@ -47,3 +77,4 @@ export default {
     },
     plugins: [],
 }
+

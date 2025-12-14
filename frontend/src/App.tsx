@@ -55,6 +55,7 @@ const AppContent: React.FC = () => {
   // 添加按钮状态
   const [showAddMenu, setShowAddMenu] = useState<boolean>(false);
   const [addingToGroup, setAddingToGroup] = useState<boolean>(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState<boolean>(false);
 
   // 自选股数据状态
   const [stockGroups, setStockGroups] = useState<StockGroupsData>({
@@ -249,7 +250,8 @@ const AppContent: React.FC = () => {
   }, [theme.mode]);
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 flex flex-col md:flex-row overflow-hidden transition-colors duration-300">
+    <div className="min-h-screen flex flex-col md:flex-row overflow-hidden transition-colors duration-300\"
+      style={{ backgroundColor: 'var(--color-bg-primary)', color: 'var(--color-text-primary)' }}>
       {/* Sidebar */}
       <Sidebar activeView={activeView} onViewChange={setActiveView} />
 
@@ -467,6 +469,84 @@ const AppContent: React.FC = () => {
           </aside>
         </div>
       </main>
+
+      {/* 移动端悬浮搜索按钮 */}
+      {!mobileSearchOpen && !selectedStock && (
+        <button
+          onClick={() => setMobileSearchOpen(true)}
+          className="md:hidden fixed bottom-6 right-6 w-14 h-14 bg-accent text-white rounded-full shadow-lg z-50 flex items-center justify-center hover:bg-accent-hover transition-colors"
+          style={{ backgroundColor: 'var(--color-accent-current)' }}
+        >
+          <Search size={24} />
+        </button>
+      )}
+
+      {/* 移动端搜索弹窗 */}
+      {mobileSearchOpen && (
+        <div className="md:hidden fixed inset-0 bg-bg-primary z-50 flex flex-col" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
+          {/* 搜索头部 */}
+          <div className="flex items-center gap-3 p-4 border-b" style={{ borderColor: 'var(--color-border)' }}>
+            <button
+              onClick={() => setMobileSearchOpen(false)}
+              className="p-2 rounded-full"
+              style={{ backgroundColor: 'var(--color-bg-tertiary)' }}
+            >
+              ✕
+            </button>
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2" size={18} style={{ color: 'var(--color-text-tertiary)' }} />
+              <input
+                autoFocus
+                type="text"
+                placeholder="搜索股票代码 / 名称..."
+                value={searchInput}
+                onChange={e => handleSearchInput(e.target.value)}
+                onKeyPress={e => {
+                  if (e.key === 'Enter') {
+                    handleAnalyze(searchInput);
+                    setMobileSearchOpen(false);
+                  }
+                }}
+                className="w-full pl-10 pr-4 py-3 rounded-full text-sm outline-none"
+                style={{
+                  backgroundColor: 'var(--color-bg-tertiary)',
+                  color: 'var(--color-text-primary)'
+                }}
+              />
+            </div>
+          </div>
+
+          {/* 搜索结果 */}
+          <div className="flex-1 overflow-y-auto p-4">
+            {suggestions.length > 0 ? (
+              <div className="space-y-2">
+                {suggestions.map(s => (
+                  <button
+                    key={s.code}
+                    onClick={() => {
+                      handleSelectSuggestion(s);
+                      setMobileSearchOpen(false);
+                    }}
+                    className="w-full p-4 rounded-xl text-left transition-colors"
+                    style={{ backgroundColor: 'var(--color-bg-secondary)' }}
+                  >
+                    <div className="font-medium" style={{ color: 'var(--color-text-primary)' }}>{s.name}</div>
+                    <div className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>{s.code}</div>
+                  </button>
+                ))}
+              </div>
+            ) : searchInput.length > 0 ? (
+              <div className="text-center py-8" style={{ color: 'var(--color-text-tertiary)' }}>
+                输入更多字符搜索...
+              </div>
+            ) : (
+              <div className="text-center py-8" style={{ color: 'var(--color-text-tertiary)' }}>
+                输入股票代码或名称搜索
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

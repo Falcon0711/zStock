@@ -31,14 +31,14 @@
       font-family: 'Inter', 'Noto Sans SC', sans-serif;
     }
 
-    /* 暗色模式背景 */
+    /* 暗色模式背景 - 使用 CSS 变量 */
     .dark body,
     html.dark {
-      background-color: #0f172a;
+      background-color: var(--color-bg-primary-dark, #000000);
     }
 
     html:not(.dark) body {
-      background-color: #f8fafc;
+      background-color: var(--color-bg-primary-light, #f5f5f7);
     }
 
     /* Custom scrollbar for webkit */
@@ -116,21 +116,21 @@
       }
     }
 
-    /* A股红涨绿跌 */
+    /* A股红涨绿跌 - 使用 CSS 变量 */
     .text-up {
-      color: #ef4444;
+      color: var(--color-stock-up, #FF3B30);
     }
 
     .text-down {
-      color: #10b981;
+      color: var(--color-stock-down, #34C759);
     }
 
     .bg-up {
-      background-color: #ef4444;
+      background-color: var(--color-stock-up, #FF3B30);
     }
 
     .bg-down {
-      background-color: #10b981;
+      background-color: var(--color-stock-down, #34C759);
     }
   </style>
 </head>
