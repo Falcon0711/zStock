@@ -248,7 +248,8 @@ class StockAnalyzer(BaseAnalyzer):
         indices = [
             {"code": "sh000001", "name": "上证指数"},
             {"code": "sz399001", "name": "深证成指"},
-            {"code": "sz399006", "name": "创业板指"}
+            {"code": "sz399006", "name": "创业板指"},
+            {"code": "sh000688", "name": "科创50"}
         ]
         
         results = []

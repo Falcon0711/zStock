@@ -55,7 +55,7 @@ async def get_market_ticker():
             if (current_time - _ticker_cache["update_time"]) < _ticker_cache_ttl:
                 return _ticker_cache["data"]
         
-        # A股指数
+        # A股指数（保留核心2个）
         a_share_indices = [
             {"code": "sh000001", "name": "上证指数"},
             {"code": "sh000300", "name": "沪深300"},

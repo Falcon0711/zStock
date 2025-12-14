@@ -34,14 +34,6 @@ export interface ChartData {
     ma60?: number;
 }
 
-export interface IndexData {
-    code: string;
-    name: string;
-    latest_price: number;
-    change_pct: number;
-    data: { time: string; value: number }[];
-}
-
 // 🆕 合并数据类型
 export interface FullStockData {
     analysis: AnalysisResult;
@@ -53,8 +45,24 @@ export const fetchHotStocks = async (): Promise<StockInfo[]> => {
     return response.data;
 };
 
-export const fetchMarketIndices = async (): Promise<IndexData[]> => {
-    const response = await api.get('/market/indices');
+// 获取市场行情（含港股美股）
+export interface MarketTickerItem {
+    code: string;
+    name: string;
+    price: number;
+    change: number;
+    change_pct: number;
+    volume: string;
+    time: string;
+}
+
+export interface MarketTickerResponse {
+    data: MarketTickerItem[];
+    update_time: string;
+}
+
+export const fetchMarketTicker = async (): Promise<MarketTickerResponse> => {
+    const response = await api.get('/market/ticker');
     return response.data;
 };
 

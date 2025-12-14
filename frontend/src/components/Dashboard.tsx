@@ -291,9 +291,8 @@ const Dashboard: React.FC<DashboardProps> = ({ analysis, history, loading, stock
 
     return (
         <div style={{
-            padding: '2.5rem',
-            maxWidth: '1200px',
-            margin: '0 auto',
+            padding: '1.5rem',
+            width: '100%',
             animation: 'fadeIn 0.5s ease-out'
         }}>
             <div style={{
@@ -313,45 +312,7 @@ const Dashboard: React.FC<DashboardProps> = ({ analysis, history, loading, stock
                 </h2>
             </div>
 
-            {/* Metrics Grid */}
-            <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-                gap: '1.5rem',
-                marginBottom: '2.5rem'
-            }}>
-                <MetricCard
-                    theme={theme}
-                    icon="💰"
-                    label={`最新价格${lastUpdate ? ` · ${lastUpdate}` : ''}`}
-                    value={`¥${(intradayData?.now ?? analysis.latest_price).toFixed(2)}`}
-                    color={theme.colors.accent}
-                />
-                <MetricCard
-                    theme={theme}
-                    icon={analysis.score >= 60 ? '📈' : '📉'}
-                    label="综合评分"
-                    value={analysis.score.toString()}
-                    color={analysis.score >= 60 ? theme.colors.success : theme.colors.error}
-                />
-                <MetricCard
-                    theme={theme}
-                    icon="📊"
-                    label="KDJ J值"
-                    value={analysis.kdj_j?.toFixed(2) || '0.00'}
-                    color={theme.colors.warning}
-                />
-                <MetricCard
-                    theme={theme}
-                    icon="📉"
-                    label="BBI多空值"
-                    value={analysis.bbi_value.toFixed(2)}
-                    color={theme.colors.textPrimary}
-                />
-            </div>
-
-
-            {/* 🆕 K线图表 / 分时图表 (带切换) */}
+            {/* K线图表 / 分时图表 (带切换) */}
             {history && history.length > 0 && (
                 <div style={{
                     background: theme.colors.bgSecondary,
@@ -509,79 +470,6 @@ const Dashboard: React.FC<DashboardProps> = ({ analysis, history, loading, stock
                     to { opacity: 1; transform: translateY(0); }
                 }
             `}</style>
-        </div>
-    );
-};
-
-const MetricCard: React.FC<{
-    theme: any;
-    icon: string;
-    label: string;
-    value: string;
-    color: string;
-}> = ({ theme, icon, label, value, color }) => {
-    return (
-        <div
-            style={{
-                background: theme.colors.bgSecondary,
-                borderRadius: '24px',
-                padding: '1.75rem',
-                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                cursor: 'default',
-                position: 'relative',
-                overflow: 'hidden',
-                boxShadow: theme.mode === 'dark'
-                    ? '0 4px 20px rgba(0,0,0,0.2)'
-                    : '0 4px 20px rgba(0,0,0,0.05)'
-            }}
-            onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'scale(1.02)';
-                e.currentTarget.style.boxShadow = theme.mode === 'dark'
-                    ? '0 12px 30px rgba(0,0,0,0.3)'
-                    : '0 12px 30px rgba(0,0,0,0.1)';
-            }}
-            onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.boxShadow = theme.mode === 'dark'
-                    ? '0 4px 20px rgba(0,0,0,0.2)'
-                    : '0 4px 20px rgba(0,0,0,0.05)';
-            }}
-        >
-            <div style={{
-                position: 'absolute',
-                top: '-10px',
-                right: '-10px',
-                fontSize: '5rem',
-                opacity: 0.05,
-                pointerEvents: 'none',
-                filter: 'grayscale(100%)'
-            }}>
-                {icon}
-            </div>
-
-            <div style={{ position: 'relative', zIndex: 1 }}>
-                <div style={{
-                    color: theme.colors.textSecondary,
-                    fontSize: '0.9rem',
-                    marginBottom: '0.5rem',
-                    fontWeight: 600,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em'
-                }}>
-                    {label}
-                </div>
-                <div style={{
-                    fontSize: '2rem',
-                    fontWeight: 700,
-                    color,
-                    letterSpacing: '-0.03em'
-                }}>
-                    {value}
-                </div>
-            </div>
         </div>
     );
 };

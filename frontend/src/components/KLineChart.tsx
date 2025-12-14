@@ -167,7 +167,7 @@ const KLineChart = forwardRef<KLineChartHandle, KLineChartProps>(({ data, theme,
                 background: { type: ColorType.Solid, color: chartBgColor },
                 textColor: textColor,
             },
-            width: mainChartRef.current.clientWidth,
+            width: mainChartRef.current.clientWidth - 10, // 减去10px防止右侧标签紧贴边缘
             height: 450,
             grid: {
                 vertLines: { visible: false },
@@ -192,14 +192,24 @@ const KLineChart = forwardRef<KLineChartHandle, KLineChartProps>(({ data, theme,
                     labelVisible: true,
                 },
             },
-            rightPriceScale: { borderColor },
+            rightPriceScale: {
+                borderColor,
+                borderVisible: false, // 隐藏边框线，使左右对齐
+                visible: true,
+                autoScale: true,
+                scaleMargins: {
+                    top: 0.1,
+                    bottom: 0.2,
+                },
+            },
             timeScale: {
                 borderColor,
                 visible: true,
                 timeVisible: true,
                 secondsVisible: false,
-                fixLeftEdge: true,
-                fixRightEdge: true,
+                fixLeftEdge: false,
+                fixRightEdge: false,
+                rightOffset: 2, // 右侧留少量空间，防止灰色区域超出
             },
         });
         mainChartInstance.current = mainChart;
@@ -218,6 +228,7 @@ const KLineChart = forwardRef<KLineChartHandle, KLineChartProps>(({ data, theme,
                     bottomColor: 'rgba(200, 180, 100, 0.15)',
                     lineColor: 'transparent',
                     lineWidth: 1,
+                    priceScaleId: 'right', // 显式绑定
                     priceLineVisible: false,
                     lastValueVisible: false,
                     crosshairMarkerVisible: false,
@@ -233,6 +244,7 @@ const KLineChart = forwardRef<KLineChartHandle, KLineChartProps>(({ data, theme,
                     bottomColor: theme.mode === 'dark' ? 'rgba(28, 28, 30, 0.95)' : 'rgba(255, 255, 255, 0.95)',
                     lineColor: 'transparent',
                     lineWidth: 1,
+                    priceScaleId: 'right', // 显式绑定
                     priceLineVisible: false,
                     lastValueVisible: false,
                     crosshairMarkerVisible: false,
@@ -249,6 +261,7 @@ const KLineChart = forwardRef<KLineChartHandle, KLineChartProps>(({ data, theme,
             const trendSeries = mainChart.addLineSeries({
                 color: '#FFD700',
                 lineWidth: 2,
+                priceScaleId: 'right', // 显式绑定
                 priceLineVisible: false,
                 lastValueVisible: false,
             });
@@ -260,6 +273,7 @@ const KLineChart = forwardRef<KLineChartHandle, KLineChartProps>(({ data, theme,
             const multiSeries = mainChart.addLineSeries({
                 color: '#888888',
                 lineWidth: 2,
+                priceScaleId: 'right', // 显式绑定
                 priceLineVisible: false,
                 lastValueVisible: false,
             });
@@ -274,8 +288,9 @@ const KLineChart = forwardRef<KLineChartHandle, KLineChartProps>(({ data, theme,
             borderDownColor: '#34C759',
             wickUpColor: '#FF3B30',
             wickDownColor: '#34C759',
-            lastValueVisible: false,
-            priceLineVisible: false,
+            priceScaleId: 'right', // 显式绑定
+            lastValueVisible: true,  // 显示最新价格标签，确保价格轴可见
+            priceLineVisible: true,  // 显示价格线
         });
         candlestickSeriesRef.current = candlestickSeries;
 
@@ -309,6 +324,7 @@ const KLineChart = forwardRef<KLineChartHandle, KLineChartProps>(({ data, theme,
             const bbiSeries = mainChart.addLineSeries({
                 color: '#8B5CF6',
                 lineWidth: 2,
+                priceScaleId: 'right', // 显式绑定
                 priceLineVisible: false,
                 lastValueVisible: false,
             });
@@ -331,6 +347,17 @@ const KLineChart = forwardRef<KLineChartHandle, KLineChartProps>(({ data, theme,
             value: d.volume,
             color: i > 0 && d.close >= data[i - 1].close ? 'rgba(255, 59, 48, 0.3)' : 'rgba(52, 199, 89, 0.3)',
         })));
+
+        // 强制再次应用rightPriceScale配置，确保不会被其他Series覆盖
+        mainChart.priceScale('right').applyOptions({
+            visible: true,
+            autoScale: true,
+            borderColor,
+            scaleMargins: {
+                top: 0.1,
+                bottom: 0.2,
+            },
+        });
 
         // ====== 十字线同步 ======
         mainChart.subscribeCrosshairMove((param) => {
@@ -369,10 +396,11 @@ const KLineChart = forwardRef<KLineChartHandle, KLineChartProps>(({ data, theme,
             }
         });
 
-        // 设置初始可见范围
+        // 设置初始可见范围：显示最近60根K线
         mainChart.timeScale().fitContent();
-        if (data.length > 60) {
-            const visibleData = data.slice(-60);
+        const INITIAL_VISIBLE_COUNT = 60;
+        if (data.length > INITIAL_VISIBLE_COUNT) {
+            const visibleData = data.slice(-INITIAL_VISIBLE_COUNT);
             mainChart.timeScale().setVisibleRange({
                 from: visibleData[0].time as Time,
                 to: visibleData[visibleData.length - 1].time as Time,
@@ -455,15 +483,20 @@ const KLineChart = forwardRef<KLineChartHandle, KLineChartProps>(({ data, theme,
             }
         };
 
-        // 初始更新
-        updateHighLowMarkers();
+        // 初始更新 - 使用setTimeout确保图表完全准备好
+        setTimeout(() => {
+            updateHighLowMarkers();
+        }, 100);
 
         // 监听时间轴变化
         mainChart.timeScale().subscribeVisibleLogicalRangeChange(updateHighLowMarkers);
 
         // 窗口大小调整处理
         const handleResize = () => {
-            if (mainChartRef.current) mainChart.applyOptions({ width: mainChartRef.current.clientWidth });
+            if (mainChartRef.current) {
+                // 同样减去10px
+                mainChart.applyOptions({ width: mainChartRef.current.clientWidth - 10 });
+            }
         };
 
         window.addEventListener('resize', handleResize);
@@ -583,7 +616,7 @@ const KLineChart = forwardRef<KLineChartHandle, KLineChartProps>(({ data, theme,
             {/* 主图表区域 */}
             <div style={{
                 borderRadius: '12px',
-                overflow: 'hidden',
+                paddingRight: '10px', // 添加右侧内边距
                 boxShadow: theme.mode === 'dark' ? '0 2px 10px rgba(0,0,0,0.3)' : '0 2px 10px rgba(0,0,0,0.08)',
             }}>
                 {/* K线主图（含成交量） */}

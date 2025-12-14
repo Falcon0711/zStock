@@ -1,9 +1,17 @@
-/* ===========================================
-   Main Entry Point
-   A股智能分析系统样式入口
-   =========================================== */
+/* 
+   A股智能分析系统
+   TailwindCSS 由 CDN 加载，此文件仅包含额外自定义样式
+*/
 
-/* Import Design System */
+/* 保留原有变量和组件样式的导入 */
 @import './styles/variables.css';
-@import './styles/global.css';
-@import './styles/components.css';
+
+/* 自定义滚动条 */
+.custom-scrollbar {
+   scrollbar-width: thin;
+   scrollbar-color: #cbd5e1 transparent;
+}
+
+.dark .custom-scrollbar {
+   scrollbar-color: #475569 transparent;
+}

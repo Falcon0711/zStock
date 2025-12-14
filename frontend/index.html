@@ -1,13 +1,143 @@
 <!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>A股智能分析系统</title>
+  <!-- TailwindCSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 配置 TailwindCSS 使用 class 模式暗色切换 -->
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            up: '#ef4444',
+            down: '#10b981',
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Google Fonts -->
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap"
+    rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', 'Noto Sans SC', sans-serif;
+    }
+
+    /* 暗色模式背景 */
+    .dark body,
+    html.dark {
+      background-color: #0f172a;
+    }
+
+    html:not(.dark) body {
+      background-color: #f8fafc;
+    }
+
+    /* Custom scrollbar for webkit */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 3px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+
+    .dark ::-webkit-scrollbar-thumb {
+      background: #475569;
+    }
+
+    .dark ::-webkit-scrollbar-thumb:hover {
+      background: #64748b;
+    }
+
+    /* 自定义水平滑动条样式 */
+    .custom-slider-scrollbar {
+      scrollbar-width: thin;
+      scrollbar-color: #cbd5e1 #f1f5f9;
+    }
+
+    .custom-slider-scrollbar::-webkit-scrollbar {
+      height: 6px;
+    }
+
+    .custom-slider-scrollbar::-webkit-scrollbar-track {
+      background: #f1f5f9;
+      border-radius: 3px;
+    }
+
+    .custom-slider-scrollbar::-webkit-scrollbar-thumb {
+      background: linear-gradient(90deg, #6366f1, #8b5cf6);
+      border-radius: 3px;
+    }
+
+    .custom-slider-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: linear-gradient(90deg, #4f46e5, #7c3aed);
+    }
+
+    .dark .custom-slider-scrollbar {
+      scrollbar-color: #6366f1 #1e293b;
+    }
+
+    .dark .custom-slider-scrollbar::-webkit-scrollbar-track {
+      background: #1e293b;
+    }
+
+    .animate-fade-in {
+      animation: fadeIn 0.5s ease-out forwards;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* A股红涨绿跌 */
+    .text-up {
+      color: #ef4444;
+    }
+
+    .text-down {
+      color: #10b981;
+    }
+
+    .bg-up {
+      background-color: #ef4444;
+    }
+
+    .bg-down {
+      background-color: #10b981;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+
 </html>
