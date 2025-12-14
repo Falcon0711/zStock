@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { createChart, ColorType } from 'lightweight-charts';
 import type { IChartApi, ISeriesApi, SeriesMarker, Time } from 'lightweight-charts';
+import type { Theme } from '../ThemeContext';
 
 // ===== 类型定义 =====
 interface ChartData {
@@ -23,7 +24,7 @@ interface ChartData {
 
 interface KLineChartProps {
     data: ChartData[];
-    theme: any;
+    theme: Theme;
     stockCode?: string;
     stockName?: string;
 }
