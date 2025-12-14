@@ -167,7 +167,7 @@ const KLineChart = forwardRef<KLineChartHandle, KLineChartProps>(({ data, theme,
                 background: { type: ColorType.Solid, color: chartBgColor },
                 textColor: textColor,
             },
-            width: mainChartRef.current.clientWidth - 10, // 减去10px防止右侧标签紧贴边缘
+            width: mainChartRef.current.clientWidth, // 减去10px防止右侧标签紧贴边缘
             height: 450,
             grid: {
                 vertLines: { visible: false },
@@ -302,22 +302,8 @@ const KLineChart = forwardRef<KLineChartHandle, KLineChartProps>(({ data, theme,
             close: d.close,
         })));
 
-        // 买卖信号标记
-        if (showSignals) {
-            const markers: SeriesMarker<Time>[] = data
-                .filter(d => d.signal_buy || d.signal_sell)
-                .map(d => ({
-                    time: d.time as Time,
-                    position: d.signal_buy ? 'belowBar' : 'aboveBar',
-                    color: d.signal_buy ? '#FF3B30' : '#34C759',
-                    shape: d.signal_buy ? 'arrowUp' : 'arrowDown',
-                    text: d.signal_buy ? '买' : '卖',
-                } as SeriesMarker<Time>));
-
-            if (markers.length > 0) {
-                candlestickSeries.setMarkers(markers);
-            }
-        }
+        // 买卖信号标记 - 移到单独的 effect 中处理，不在这里设置
+        // (markers 由 showSignals effect 单独管理)
 
         // BBI线
         if (data.some(d => d.bbi != null)) {
@@ -463,20 +449,7 @@ const KLineChart = forwardRef<KLineChartHandle, KLineChartProps>(({ data, theme,
                     title: '',
                 });
 
-                // 买卖信号标记
-                const markers: SeriesMarker<Time>[] = [];
-                if (showSignals) {
-                    data.filter(d => d.signal_buy || d.signal_sell).forEach(d => {
-                        markers.push({
-                            time: d.time as Time,
-                            position: d.signal_buy ? 'belowBar' : 'aboveBar',
-                            color: d.signal_buy ? '#FF3B30' : '#34C759',
-                            shape: d.signal_buy ? 'arrowUp' : 'arrowDown',
-                            text: d.signal_buy ? '买' : '卖',
-                        } as SeriesMarker<Time>);
-                    });
-                }
-                candlestickSeries.setMarkers(markers);
+                // 买卖信号标记由单独的 effect 管理，这里不再设置
             } catch (e) {
                 // 忽略更新标记时的错误
                 console.debug('updateHighLowMarkers error:', e);
@@ -491,21 +464,52 @@ const KLineChart = forwardRef<KLineChartHandle, KLineChartProps>(({ data, theme,
         // 监听时间轴变化
         mainChart.timeScale().subscribeVisibleLogicalRangeChange(updateHighLowMarkers);
 
-        // 窗口大小调整处理
-        const handleResize = () => {
-            if (mainChartRef.current) {
-                // 同样减去10px
-                mainChart.applyOptions({ width: mainChartRef.current.clientWidth - 10 });
-            }
-        };
+        // ResizeObserver 持续监听容器尺寸变化
+        const ro = new ResizeObserver(() => {
+            if (!mainChartRef.current) return;
+            mainChart.applyOptions({ width: mainChartRef.current.clientWidth });
+        });
+        ro.observe(mainChartRef.current);
 
-        window.addEventListener('resize', handleResize);
+        // 首帧 rAF 补偿，确保初始尺寸正确
+        requestAnimationFrame(() => {
+            if (!mainChartRef.current) return;
+            mainChart.applyOptions({ width: mainChartRef.current.clientWidth });
+            // 重新设置可见范围
+            if (data.length > INITIAL_VISIBLE_COUNT) {
+                const visibleData = data.slice(-INITIAL_VISIBLE_COUNT);
+                mainChart.timeScale().setVisibleRange({
+                    from: visibleData[0].time as Time,
+                    to: visibleData[visibleData.length - 1].time as Time,
+                });
+            }
+        });
 
         return () => {
-            window.removeEventListener('resize', handleResize);
+            ro.disconnect();
             mainChart.remove();
         };
-    }, [data, theme, showSignals]);
+    }, [data, theme]); // 移除 showSignals 依赖，由单独的 effect 管理
+
+    // ====== 单独的 markers 更新 effect ======
+    useEffect(() => {
+        if (!candlestickSeriesRef.current || data.length === 0) return;
+
+        if (showSignals) {
+            const markers: SeriesMarker<Time>[] = data
+                .filter(d => d.signal_buy || d.signal_sell)
+                .map(d => ({
+                    time: d.time as Time,
+                    position: d.signal_buy ? 'belowBar' : 'aboveBar',
+                    color: d.signal_buy ? '#FF3B30' : '#34C759',
+                    shape: d.signal_buy ? 'arrowUp' : 'arrowDown',
+                    text: d.signal_buy ? '买' : '卖',
+                } as SeriesMarker<Time>));
+            candlestickSeriesRef.current.setMarkers(markers);
+        } else {
+            candlestickSeriesRef.current.setMarkers([]);
+        }
+    }, [showSignals, data]);
 
     const latestData = data.length > 0 ? data[data.length - 1] : null;
     const currentData = hoverData || latestData;
@@ -616,7 +620,7 @@ const KLineChart = forwardRef<KLineChartHandle, KLineChartProps>(({ data, theme,
             {/* 主图表区域 */}
             <div style={{
                 borderRadius: '12px',
-                paddingRight: '10px', // 添加右侧内边距
+                padding: '0 10px', // 添加右侧内边距
                 boxShadow: theme.mode === 'dark' ? '0 2px 10px rgba(0,0,0,0.3)' : '0 2px 10px rgba(0,0,0,0.08)',
             }}>
                 {/* K线主图（含成交量） */}
